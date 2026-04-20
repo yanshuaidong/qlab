@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local SQLite databases (machine-specific; do not commit)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
