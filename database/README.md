@@ -2,6 +2,23 @@
 
 本地期货相关 SQLite 数据库，路径：`database/local_fut_pulse.sqlite`。
 
+## 数据概览
+
+以下指标描述「当前库里有什么、规模多大」。
+
+| 指标 | 含义 | 当前快照（本机库） |
+|------|------|-------------------|
+| 品种数 | `fut_variety` 行数 | 55 |
+| 有强弱数据的品种数 | `fut_strength` 中不同 `variety_id` | 55（与品种表一致） |
+| 交易日数 | `fut_strength` 中不同 `trade_date` | 180 |
+| 强弱记录数 | `fut_strength` 总行数 | 9900（≈ 55×180） |
+| 收盘价记录数 | `fut_daily_close` 总行数 | 9900（与 `fut_strength` 对齐后应一致） |
+| 强弱/收盘日期范围 | `MIN(trade_date)` ~ `MAX(trade_date)` | 2025-07-22 ~ 2026-04-20 |
+
+上表数字为文档更新当日从本地 `local_fut_pulse.sqlite` 查询结果，仅作量级参考。
+
+---
+
 ## 表一览
 
 | 表名 | 说明 |
@@ -22,7 +39,7 @@
 |------|------|------|------|
 | `id` | INTEGER | NOT NULL, PRIMARY KEY | 品种内部编号 |
 | `name` | TEXT | NOT NULL | 显示名称 |
-| `key` | TEXT | NOT NULL, UNIQUE | 业务键（如 `rbm`、`cum`），`updata.py` 中 AkShare 映射使用小写 key |
+| `key` | TEXT | NOT NULL, UNIQUE | 业务键（如 `rbm`、`cum`） |
 
 ---
 
@@ -49,8 +66,6 @@
 
 ## fut_daily_close
 
-主连日收盘价；由项目根目录 `updata.py` 从 AkShare 拉取主连历史并对齐 `fut_strength` 中出现的交易日写入/更新。
-
 | 列名 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | `variety_id` | INTEGER | NOT NULL | 对应 `fut_variety.id` |
@@ -62,12 +77,6 @@
 **索引**
 
 - `idx_fut_daily_close_trade_date`：`(`trade_date`)`
-
-**与脚本的关系（`updata.py`）**
-
-- 默认目标交易日：取 `fut_strength` 中**所有出现过的** `trade_date`（升序）。
-- 同步完成后会删除 `fut_daily_close` 中**不在** `fut_strength` 交易日集合内的行，使两表日期域一致。
-- AkShare 品种符号由品种 `key` 查 `CLOSE_API_SYMBOL_MAP` 得到。
 
 ---
 
