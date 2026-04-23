@@ -1,0 +1,14 @@
+{
+  "commands": [
+    {
+      "id": "python---version-1776867486915",
+      "name": "看版本",
+      "command": "python --version"
+    },
+    {
+      "id": "node-1776868218833",
+      "name": "信号+开平仓",
+      "command": "cd D:\\ysd\\workstation\\test\\assistant\\src\npython daily_run.py --signal-date 2026-04-22 --execute-mechanical"
+    }
+  ]
+}
