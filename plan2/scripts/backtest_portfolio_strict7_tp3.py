@@ -3,7 +3,7 @@
 
 实现口径：
 - 12 个品种，全部只跑 A 通道
-- 严格 7 日开仓：4 日主力背景 + 3 日主力/散户触发
+- 严格 7 日开仓：5+3 重合判定（第 5 天与触发第 1 天重合）
 - 3 日 main_force 拐头离场
 - 组合层加入 3 槽位、板块互斥、主力动量分位排序
 - 同一品种平仓后当天不反手；同日平仓释放的槽位不允许被同日新信号填入
@@ -110,14 +110,39 @@ def compute_signals_strict7_tp3(df: pd.DataFrame) -> pd.DataFrame:
     bg2 = out["main_force"].shift(5)
     bg3 = out["main_force"].shift(4)
     bg4 = out["main_force"].shift(3)
+    bg5 = out["main_force"].shift(2)
 
     trigger_main_up = out["main_diff"].shift(1).gt(0) & out["main_diff"].gt(0)
     trigger_main_down = out["main_diff"].shift(1).lt(0) & out["main_diff"].lt(0)
     trigger_retail_down = out["retail_diff"].shift(1).lt(0) & out["retail_diff"].lt(0)
     trigger_retail_up = out["retail_diff"].shift(1).gt(0) & out["retail_diff"].gt(0)
 
-    long_bg = bg1.lt(0) & bg2.lt(0) & bg3.lt(0) & bg4.lt(0) & (bg4 - bg1).lt(0)
-    short_bg = bg1.gt(0) & bg2.gt(0) & bg3.gt(0) & bg4.gt(0) & (bg4 - bg1).gt(0)
+    # 5+3(重合)口径：
+    # - 背景阶段 5 天：bg1..bg5
+    # - 触发阶段 3 天：bg5、t-1、t
+    # 通过约束 bg5 为阶段极值，避免相邻交易日重复触发同一段反转。
+    long_bg = (
+        bg1.lt(0)
+        & bg2.lt(0)
+        & bg3.lt(0)
+        & bg4.lt(0)
+        & bg5.lt(0)
+        & bg5.le(bg1)
+        & bg5.le(bg2)
+        & bg5.le(bg3)
+        & bg5.le(bg4)
+    )
+    short_bg = (
+        bg1.gt(0)
+        & bg2.gt(0)
+        & bg3.gt(0)
+        & bg4.gt(0)
+        & bg5.gt(0)
+        & bg5.ge(bg1)
+        & bg5.ge(bg2)
+        & bg5.ge(bg3)
+        & bg5.ge(bg4)
+    )
 
     out["long_signal"] = cont7 & long_bg & trigger_main_up & trigger_retail_down
     out["short_signal"] = cont7 & short_bg & trigger_main_down & trigger_retail_up

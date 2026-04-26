@@ -211,3 +211,9 @@ __marimo__/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Ignore JSON artifacts under plan2
+/plan2/**/*.json
+
+# Ignore CSV files recursively
+*.csv
