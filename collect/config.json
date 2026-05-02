@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "created_at": "2026-05-01T23:04:02+08:00",
+  "stock_list_region": {
+    "left": 38,
+    "top": 87,
+    "right": 136,
+    "bottom": 1085,
+    "width": 98,
+    "height": 998
+  },
+  "scale_text_region": {
+    "left": 378,
+    "top": 766,
+    "right": 931,
+    "bottom": 790,
+    "width": 553,
+    "height": 24
+  },
+  "bar_chart_region": {
+    "left": 385,
+    "top": 790,
+    "right": 2236,
+    "bottom": 1013,
+    "width": 1851,
+    "height": 223
+  },
+  "rows_per_screen": 18,
+  "record_count": 46,
+  "latest_trade_date": "2026-04-30",
+  "settle_seconds": 0.8,
+  "initial_click": {
+    "x": 87,
+    "y": 114,
+    "enabled": true,
+    "settle_seconds": 0.8
+  },
+  "bottom_row_click": {
+    "x": 87,
+    "y": 1057,
+    "settle_seconds": 0.8
+  },
+  "navigation": {
+    "advance_mode": "down",
+    "next_key": "down",
+    "settle_seconds": 1.0,
+    "key_interval": 0.2
+  },
+  "ocr": {
+    "stock_code_lang": "eng",
+    "stock_code_psm": 6,
+    "scale_lang": "chi_sim+eng",
+    "scale_psm": 7,
+    "scale_engine": "auto"
+  },
+  "paths": {
+    "runs_dir": "D:\\ysd\\qlab\\collect\\runs",
+    "sqlite_path": "D:\\ysd\\qlab\\collect\\data\\ths_fund_flow.sqlite"
+  },
+  "previews": {
+    "stock_list_region": "D:\\ysd\\qlab\\collect\\config_previews\\stock_list_region_20260501_230402.png",
+    "scale_text_region": "D:\\ysd\\qlab\\collect\\config_previews\\scale_text_region_20260501_230402.png",
+    "bar_chart_region": "D:\\ysd\\qlab\\collect\\config_previews\\bar_chart_region_20260501_230402.png"
+  }
+}
