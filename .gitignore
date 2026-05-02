@@ -217,3 +217,14 @@ __marimo__/
 
 # Ignore CSV files recursively
 *.csv
+
+# collect/: nested DB/sqlite binaries (recursive)
+collect/**/*.db
+collect/**/*.db-journal
+collect/**/*.db-wal
+collect/**/*.db-shm
+collect/**/*.sqlite
+collect/**/*.sqlite3
+collect/**/*.sqlite-journal
+collect/**/*.sqlite-wal
+collect/**/*.sqlite-shm

@@ -1,0 +1,15 @@
+curl ^"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.603777^&ut=fa5fd1943c7b386f172d6893dbfba10b^&fields1=f1^%^2Cf2^%^2Cf3^%^2Cf4^%^2Cf5^%^2Cf6^&fields2=f51^%^2Cf52^%^2Cf53^%^2Cf54^%^2Cf55^%^2Cf56^%^2Cf57^%^2Cf58^%^2Cf59^%^2Cf60^%^2Cf61^&klt=101^&fqt=1^&end=20260502^&lmt=210^&cb=quote_jp1^" ^
+  -H ^"Accept: */*^" ^
+  -H ^"Accept-Language: zh-CN,zh;q=0.9^" ^
+  -H ^"Cache-Control: no-cache^" ^
+  -H ^"Connection: keep-alive^" ^
+  -b ^"qgqp_b_id=1383c5afdb5e5ab972a424fbccc9c88f; st_nvi=3BUtu_B-5lWWunrPrtpcMd63c; st_si=81944676348464; nid18=000842679b010e1a44cbeba60a0c8e65; nid18_create_time=1777734355672; gviem=bdORVpGjT3SsFYwfzFotm196a; gviem_create_time=1777734355672; wsc_checkuser_ok=1; st_pvi=80409292647939; st_sp=2026-05-02^%^2023^%^3A05^%^3A55; st_inirUrl=; st_sn=22; st_psi=20260502233839469-113200354966-3750454427; st_asi=20260502233839469-113200354966-3750454427-web.xgnhqdy.rk-1^" ^
+  -H ^"Pragma: no-cache^" ^
+  -H ^"Referer: https://quote.eastmoney.com/concept/sh603777.html?from=classic^" ^
+  -H ^"Sec-Fetch-Dest: script^" ^
+  -H ^"Sec-Fetch-Mode: no-cors^" ^
+  -H ^"Sec-Fetch-Site: same-site^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Google Chrome^\^";v=^\^"147^\^", ^\^"Not.A/Brand^\^";v=^\^"8^\^", ^\^"Chromium^\^";v=^\^"147^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^"
