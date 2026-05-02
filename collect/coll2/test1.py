@@ -815,7 +815,7 @@ def fetch_daily_hist_with_retry(
     eastmoney_cookie: str | None,
     eastmoney_md: EastmoneyMarkdownState | None = None,
 ) -> pd.DataFrame:
-    sources = ["eastmoney", "tx"] if source == "auto" else [source]
+    sources = ["tx", "eastmoney"] if source == "auto" else [source]
     errors: list[str] = []
 
     for current_source in sources:
@@ -1086,7 +1086,7 @@ def parse_args() -> argparse.Namespace:
         "--adjust",
         choices=["", "qfq", "hfq"],
         default="",
-        help="Price adjustment for stock_zh_a_hist. Empty string means no adjustment.",
+        help="复权方式（东财 ak.stock_zh_a_hist / 腾讯 ak.stock_zh_a_hist_tx 均支持）。空字符串为不复权。",
     )
     parser.add_argument(
         "--end-date",
@@ -1130,8 +1130,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source",
         choices=["auto", "eastmoney", "em", "tx"],
-        default="auto",
-        help="Daily data source. auto tries direct Eastmoney first, then Tencent.",
+        default="tx",
+        help="日线：tx 腾讯（默认，无振幅/换手等）；auto 先腾讯再东财；eastmoney 东财直连；em akshare 东财接口。",
     )
     parser.add_argument(
         "--retries",
