@@ -14,8 +14,8 @@
       --text: #d6dae3;
       --muted: #8a909c;
       --accent: #3b82f6;
-      --up: #26a69a;
-      --down: #ef5350;
+      --up: #ef5350;
+      --down: #26a69a;
       --warn: #f59e0b;
     }
     * { box-sizing: border-box; }
@@ -223,6 +223,12 @@
     const hoverInfo = $("hover-info");
     const filterMode = $("filter-mode");
     const limitDateSel = $("limit-date");
+    const UP_COLOR = "#ef5350";
+    const DOWN_COLOR = "#26a69a";
+    const UP_BAR_COLOR = "rgba(239,83,80,0.55)";
+    const DOWN_BAR_COLOR = "rgba(38,166,154,0.55)";
+    const UP_FLOW_COLOR = "rgba(239,83,80,0.65)";
+    const DOWN_FLOW_COLOR = "rgba(38,166,154,0.65)";
 
     const indicators = {
       volume: {
@@ -230,7 +236,7 @@
         valueKey: "volume",
         ratioKey: null,
         formatter: formatVolume,
-        color: (b) => b.close >= b.open ? "rgba(38,166,154,0.55)" : "rgba(239,83,80,0.55)",
+        color: (b) => b.close >= b.open ? UP_BAR_COLOR : DOWN_BAR_COLOR,
         hoverLabel: "成交量",
       },
       superLarge: {
@@ -283,7 +289,7 @@
 
     function signedColor(value) {
       if (value == null) return "rgba(138,144,156,0.35)";
-      return value >= 0 ? "rgba(38,166,154,0.65)" : "rgba(239,83,80,0.65)";
+      return value >= 0 ? UP_FLOW_COLOR : DOWN_FLOW_COLOR;
     }
 
     function toneClass(value) {
@@ -340,6 +346,24 @@
       return n.toFixed(0);
     }
 
+    function formatTradeDate(value) {
+      if (!value) return "-";
+      const text = String(value).trim();
+      const ymd = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+      if (ymd) {
+        return `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+      }
+      const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+      if (compact) {
+        return `${compact[1]}-${compact[2]}-${compact[3]}`;
+      }
+      const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+      if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      }
+      return text;
+    }
+
     function metric(label, value, cls = "") {
       return `<span class="metric">${label}<b class="${cls}">${value}</b></span>`;
     }
@@ -363,7 +387,7 @@
         return;
       }
       hoverInfo.innerHTML = [
-        metric("日期", bar.trade_date),
+        metric("日期", formatTradeDate(bar.trade_date)),
         metric("开盘", formatPrice(bar.open)),
         metric("收盘", formatPrice(bar.close)),
         metric("涨跌幅", formatPct(bar.pct_change), toneClass(bar.pct_change)),
@@ -458,10 +482,13 @@
           borderColor: "#2a2f3a",
           visible: showTime,
           timeVisible: false,
+          tickMarkFormatter: (time) => formatTradeDate(timeToTradeDate(time)),
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         localization: {
+          locale: "zh-CN",
           priceFormatter,
+          dateFormat: "yyyy-MM-dd",
         },
       };
     }
@@ -478,12 +505,12 @@
       subSeries = {};
 
       candle = mainChart.addCandlestickSeries({
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        borderUpColor: "#26a69a",
-        borderDownColor: "#ef5350",
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
+        upColor: UP_COLOR,
+        downColor: DOWN_COLOR,
+        borderUpColor: UP_COLOR,
+        borderDownColor: DOWN_COLOR,
+        wickUpColor: UP_COLOR,
+        wickDownColor: DOWN_COLOR,
       });
 
       for (const key of subIndicatorKeys) {
