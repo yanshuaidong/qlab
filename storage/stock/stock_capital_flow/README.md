@@ -1,12 +1,12 @@
 # 本地库 `stock.sqlite` 说明
 
-本文档描述 `collect/coll2/data/stock.sqlite` 的用途、表结构、索引与数据量级，便于快速了解本地 SQLite 中的数据结构。**下文中的行数与时间范围在文档编写时由数据库实际查询得到**（若你后续追加导入，请以库里为准）。
+本文档描述 `storage/stock/stock_capital_flow/stock.sqlite` 的用途、表结构、索引与数据量级，便于快速了解本地 SQLite 中的数据结构。**下文中的行数与时间范围在文档编写时由数据库实际查询得到**（若你后续追加导入，请以库里为准）。
 
 ## 文件概览
 
 | 项目 | 值 |
 |------|-----|
-| 路径 | `collect/coll2/data/stock.sqlite` |
+| 路径 | `storage/stock/stock_capital_flow/stock.sqlite` |
 | 约大小 | 约 297 MiB（310,804,480 字节） |
 | 引擎 | SQLite 3 |
 
@@ -172,22 +172,3 @@
 
 主键对应的 `sqlite_autoindex_*` 由 SQLite 自动维护，此处不单独列出。
 
-## 自行核对行数与时间范围
-
-在项目根目录或任意目录执行（需 Python 3）：
-
-```python
-import sqlite3
-p = r"collect/coll2/data/stock.sqlite"  # 或改为绝对路径
-conn = sqlite3.connect(p)
-cur = conn.cursor()
-cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-for (name,) in cur.fetchall():
-    cur.execute(f'SELECT COUNT(*) FROM "{name}"')
-    print(name, cur.fetchone()[0])
-conn.close()
-```
-
----
-
-若本 README 与数据库不一致，以 `stock.sqlite` 内实际 `sqlite_master` 与 `COUNT(*)` 为准。
