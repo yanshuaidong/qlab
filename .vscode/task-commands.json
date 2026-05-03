@@ -9,6 +9,11 @@
       "id": "node-1776868218833",
       "name": "信号+开平仓",
       "command": "cd D:\\ysd\\workstation\\test\\assistant\\src\npython daily_run.py --signal-date 2026-04-22 --execute-mechanical"
+    },
+    {
+      "id": "command-mopeatg8-36gf",
+      "name": "展示1",
+      "command": "cd D:\\ysd\\qlab\\display\\stock_capital_flow\npython -m uvicorn app:app --reload --host 127.0.0.1 --port 8000"
     }
   ]
 }

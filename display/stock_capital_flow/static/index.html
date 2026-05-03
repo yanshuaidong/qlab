@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>本地日 K 与资金流查看</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    :root {
+      --bg: #11151c;
+      --panel: #171c25;
+      --panel-2: #0d1117;
+      --line: #2a2f3a;
+      --text: #d6dae3;
+      --muted: #8a909c;
+      --accent: #3b82f6;
+      --up: #26a69a;
+      --down: #ef5350;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      display: grid;
+      grid-template-columns: auto minmax(8rem, 10rem) minmax(12rem, 18rem) minmax(11rem, 15rem) minmax(18rem, 26rem) auto 1fr;
+      gap: 0.75rem;
+      align-items: center;
+      min-height: 58px;
+      padding: 0.7rem 1rem;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    input[type="search"], select {
+      width: 100%;
+      min-width: 0;
+      height: 34px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 0.35rem 0.55rem;
+      border-radius: 6px;
+      outline: none;
+    }
+    input[type="search"]:focus, select:focus {
+      border-color: var(--accent);
+    }
+    button {
+      height: 34px;
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      padding: 0 0.9rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .is-hidden { display: none; }
+    #status {
+      justify-self: end;
+      overflow: hidden;
+      max-width: 100%;
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .workspace {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      height: calc(100vh - 58px);
+      min-height: 500px;
+    }
+    .info-bar {
+      display: grid;
+      grid-template-columns: minmax(18rem, 1fr);
+      gap: 1rem;
+      align-items: center;
+      min-height: 46px;
+      padding: 0.45rem 1rem;
+      border-bottom: 1px solid var(--line);
+      background: #121720;
+    }
+    #hover-info {
+      display: grid;
+      grid-template-columns: repeat(12, max-content);
+      gap: 0.35rem 1rem;
+      align-items: baseline;
+      overflow: hidden;
+      font-size: 0.86rem;
+    }
+    .metric {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .metric b {
+      margin-left: 0.28rem;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .up { color: var(--up) !important; }
+    .down { color: var(--down) !important; }
+    .flat { color: var(--muted) !important; }
+    .chart-area {
+      display: grid;
+      grid-template-rows: minmax(250px, 1.65fr) repeat(5, minmax(82px, 0.58fr));
+      min-height: 0;
+      padding: 0.5rem 1rem 1rem;
+      gap: 0.4rem;
+    }
+    .chart-panel {
+      position: relative;
+      min-height: 0;
+      border: 1px solid var(--line);
+      background: #131722;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .chart-title {
+      position: absolute;
+      z-index: 2;
+      top: 8px;
+      left: 12px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      pointer-events: none;
+    }
+    #main-chart, .sub-chart {
+      width: 100%;
+      height: 100%;
+    }
+    @media (max-width: 860px) {
+      header {
+        grid-template-columns: 1fr;
+      }
+      #status { justify-self: start; }
+      .info-bar {
+        grid-template-columns: 1fr;
+      }
+      #hover-info {
+        grid-template-columns: repeat(2, minmax(0, max-content));
+      }
+      .chart-area {
+        grid-template-rows: minmax(280px, 1.4fr) repeat(5, minmax(86px, 0.6fr));
+        padding: 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>stock_capital_flow</h1>
+    <label>方式
+      <select id="filter-mode">
+        <option value="normal">普通搜索</option>
+        <option value="limit-up">涨停候选</option>
+      </select>
+    </label>
+    <label id="search-label">筛选 <input type="search" id="q" placeholder="代码或名称" /></label>
+    <label id="limit-date-label" class="is-hidden">涨停日 <select id="limit-date"></select></label>
+    <label>证券 <select id="stock"></select></label>
+    <button type="button" id="load">加载</button>
+    <span id="status"></span>
+  </header>
+  <main class="workspace">
+    <section class="info-bar">
+      <div id="hover-info"></div>
+    </section>
+    <section class="chart-area">
+      <div class="chart-panel">
+        <div class="chart-title" id="main-title">日 K</div>
+        <div id="main-chart"></div>
+      </div>
+      <div class="chart-panel" data-indicator="volume">
+        <div class="chart-title">成交量</div>
+        <div class="sub-chart" id="chart-volume"></div>
+      </div>
+      <div class="chart-panel" data-indicator="superLarge">
+        <div class="chart-title">超大单净流入</div>
+        <div class="sub-chart" id="chart-superLarge"></div>
+      </div>
+      <div class="chart-panel" data-indicator="large">
+        <div class="chart-title">大单净流入</div>
+        <div class="sub-chart" id="chart-large"></div>
+      </div>
+      <div class="chart-panel" data-indicator="medium">
+        <div class="chart-title">中单净流入</div>
+        <div class="sub-chart" id="chart-medium"></div>
+      </div>
+      <div class="chart-panel" data-indicator="small">
+        <div class="chart-title">小单净流入</div>
+        <div class="sub-chart" id="chart-small"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+    const stockSel = $("stock");
+    const hoverInfo = $("hover-info");
+    const filterMode = $("filter-mode");
+    const limitDateSel = $("limit-date");
+
+    const indicators = {
+      volume: {
+        title: "成交量",
+        valueKey: "volume",
+        ratioKey: null,
+        formatter: formatVolume,
+        color: (b) => b.close >= b.open ? "rgba(38,166,154,0.55)" : "rgba(239,83,80,0.55)",
+        hoverLabel: "成交量",
+      },
+      superLarge: {
+        title: "超大单净流入",
+        valueKey: "super_large_net_inflow_amount",
+        ratioKey: "super_large_net_inflow_ratio",
+        formatter: formatMoney,
+        color: (b) => signedColor(b.super_large_net_inflow_amount),
+        hoverLabel: "超大单",
+      },
+      large: {
+        title: "大单净流入",
+        valueKey: "large_net_inflow_amount",
+        ratioKey: "large_net_inflow_ratio",
+        formatter: formatMoney,
+        color: (b) => signedColor(b.large_net_inflow_amount),
+        hoverLabel: "大单",
+      },
+      medium: {
+        title: "中单净流入",
+        valueKey: "medium_net_inflow_amount",
+        ratioKey: "medium_net_inflow_ratio",
+        formatter: formatMoney,
+        color: (b) => signedColor(b.medium_net_inflow_amount),
+        hoverLabel: "中单",
+      },
+      small: {
+        title: "小单净流入",
+        valueKey: "small_net_inflow_amount",
+        ratioKey: "small_net_inflow_ratio",
+        formatter: formatMoney,
+        color: (b) => signedColor(b.small_net_inflow_amount),
+        hoverLabel: "小单",
+      },
+    };
+    const subIndicatorKeys = ["volume", "superLarge", "large", "medium", "small"];
+
+    let mainChart = null;
+    let candle = null;
+    let subCharts = {};
+    let subSeries = {};
+    let currentBars = [];
+    let currentStockText = "";
+    let syncing = false;
+    let syncingCrosshair = false;
+
+    function setStatus(msg) {
+      statusEl.textContent = msg || "";
+    }
+
+    function signedColor(value) {
+      if (value == null) return "rgba(138,144,156,0.35)";
+      return value >= 0 ? "rgba(38,166,154,0.65)" : "rgba(239,83,80,0.65)";
+    }
+
+    function toneClass(value) {
+      if (value == null || Number(value) === 0) return "flat";
+      return Number(value) > 0 ? "up" : "down";
+    }
+
+    function formatPrice(value) {
+      return value == null ? "-" : Number(value).toFixed(2);
+    }
+
+    function formatPct(value) {
+      return value == null ? "-" : `${Number(value).toFixed(2)}%`;
+    }
+
+    function formatVolume(value) {
+      if (value == null) return "-";
+      const n = Number(value);
+      if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿手`;
+      if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)}万手`;
+      return `${n.toLocaleString("zh-CN")}手`;
+    }
+
+    function formatVolumeTick(value) {
+      if (value == null) return "";
+      const n = Number(value);
+      if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}亿`;
+      if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`;
+      return n.toFixed(0);
+    }
+
+    function formatMoney(value) {
+      if (value == null) return "-";
+      const n = Number(value);
+      const sign = n > 0 ? "+" : "";
+      if (Math.abs(n) >= 100000000) return `${sign}${(n / 100000000).toFixed(2)}亿`;
+      if (Math.abs(n) >= 10000) return `${sign}${(n / 10000).toFixed(2)}万`;
+      return `${sign}${n.toFixed(0)}`;
+    }
+
+    function formatMoneyTick(value) {
+      if (value == null) return "";
+      const n = Number(value);
+      if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}亿`;
+      if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`;
+      return n.toFixed(0);
+    }
+
+    function formatAmount(value) {
+      if (value == null) return "-";
+      const n = Number(value);
+      if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`;
+      if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)}万`;
+      return n.toFixed(0);
+    }
+
+    function metric(label, value, cls = "") {
+      return `<span class="metric">${label}<b class="${cls}">${value}</b></span>`;
+    }
+
+    function timeToTradeDate(time) {
+      if (!time) return null;
+      if (typeof time === "string") return time;
+      if (typeof time === "object" && time.year && time.month && time.day) {
+        return [
+          String(time.year).padStart(4, "0"),
+          String(time.month).padStart(2, "0"),
+          String(time.day).padStart(2, "0"),
+        ].join("-");
+      }
+      return String(time);
+    }
+
+    function setHoverInfo(bar) {
+      if (!bar) {
+        hoverInfo.innerHTML = metric("证券", currentStockText || "-") + metric("日期", "-");
+        return;
+      }
+      hoverInfo.innerHTML = [
+        metric("日期", bar.trade_date),
+        metric("开盘", formatPrice(bar.open)),
+        metric("收盘", formatPrice(bar.close)),
+        metric("涨跌幅", formatPct(bar.pct_change), toneClass(bar.pct_change)),
+        metric("最高", formatPrice(bar.high)),
+        metric("最低", formatPrice(bar.low)),
+        metric("涨跌额", formatPrice(bar.change_amount), toneClass(bar.change_amount)),
+        metric("成交额", formatAmount(bar.amount)),
+        metric("换手", formatPct(bar.turnover_rate)),
+        metric("成交量", formatVolume(bar.volume)),
+        metric("超大单", formatMoney(bar.super_large_net_inflow_amount), toneClass(bar.super_large_net_inflow_amount)),
+        metric("大单", formatMoney(bar.large_net_inflow_amount), toneClass(bar.large_net_inflow_amount)),
+        metric("中单", formatMoney(bar.medium_net_inflow_amount), toneClass(bar.medium_net_inflow_amount)),
+        metric("小单", formatMoney(bar.small_net_inflow_amount), toneClass(bar.small_net_inflow_amount)),
+      ].join("");
+    }
+
+    async function fetchStocks() {
+      const q = $("q").value.trim();
+      const url = q
+        ? `/api/stocks?q=${encodeURIComponent(q)}&limit=500`
+        : "/api/stocks?limit=400";
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    async function fetchLimitUpDates() {
+      const r = await fetch("/api/limit-up/dates?limit=30");
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    async function fetchLimitUpStocks(tradeDate) {
+      const r = await fetch(`/api/limit-up/stocks?trade_date=${encodeURIComponent(tradeDate)}`);
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    function fillLimitDates(list) {
+      const cur = limitDateSel.value;
+      limitDateSel.innerHTML = "";
+      for (const d of list) {
+        const opt = document.createElement("option");
+        opt.value = d.trade_date;
+        opt.textContent = `${d.trade_date} · ${d.count} 只`;
+        limitDateSel.appendChild(opt);
+      }
+      if (cur && [...limitDateSel.options].some((o) => o.value === cur)) {
+        limitDateSel.value = cur;
+      }
+    }
+
+    function fillSelect(list, { preserveCurrent = true } = {}) {
+      const cur = stockSel.value;
+      stockSel.innerHTML = "";
+      for (const s of list) {
+        const opt = document.createElement("option");
+        opt.value = JSON.stringify({
+          exchange: s.exchange,
+          stock_code: s.stock_code,
+          name: s.name,
+        });
+        const tags = [];
+        if (s.limit_up_pct_change != null) tags.push(`涨幅 ${formatPct(s.limit_up_pct_change)}`);
+        if (s.limit_up_count_120 != null) tags.push(`120日 ${s.limit_up_count_120}次`);
+        if (s.board) tags.push(s.board);
+        opt.textContent = `${s.stock_code} · ${s.name} (${s.exchange})${tags.length ? ` · ${tags.join(" · ")}` : ""}`;
+        stockSel.appendChild(opt);
+      }
+      if (preserveCurrent && cur && [...stockSel.options].some((o) => o.value === cur)) {
+        stockSel.value = cur;
+      }
+    }
+
+    function chartOptions(el, showTime, priceFormatter = (price) => Number(price).toFixed(2)) {
+      return {
+        width: el.clientWidth,
+        height: el.clientHeight,
+        layout: {
+          background: { type: "solid", color: "#131722" },
+          textColor: "#d6dae3",
+        },
+        grid: {
+          vertLines: { color: "#252b36" },
+          horzLines: { color: "#252b36" },
+        },
+        rightPriceScale: {
+          borderColor: "#2a2f3a",
+          minimumWidth: 92,
+        },
+        timeScale: {
+          borderColor: "#2a2f3a",
+          visible: showTime,
+          timeVisible: false,
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        localization: {
+          priceFormatter,
+        },
+      };
+    }
+
+    function ensureCharts() {
+      const mainEl = $("main-chart");
+      mainEl.innerHTML = "";
+      for (const key of subIndicatorKeys) {
+        $(`chart-${key}`).innerHTML = "";
+      }
+
+      mainChart = LightweightCharts.createChart(mainEl, chartOptions(mainEl, false));
+      subCharts = {};
+      subSeries = {};
+
+      candle = mainChart.addCandlestickSeries({
+        upColor: "#26a69a",
+        downColor: "#ef5350",
+        borderUpColor: "#26a69a",
+        borderDownColor: "#ef5350",
+        wickUpColor: "#26a69a",
+        wickDownColor: "#ef5350",
+      });
+
+      for (const key of subIndicatorKeys) {
+        const el = $(`chart-${key}`);
+        const chart = LightweightCharts.createChart(
+          el,
+          chartOptions(
+            el,
+            key === subIndicatorKeys[subIndicatorKeys.length - 1],
+            key === "volume" ? formatVolumeTick : formatMoneyTick
+          )
+        );
+        const series = chart.addHistogramSeries({
+          priceFormat: key === "volume" ? {
+            type: "custom",
+            formatter: formatVolumeTick,
+          } : {
+            type: "custom",
+            formatter: formatMoneyTick,
+          },
+        });
+        subCharts[key] = chart;
+        subSeries[key] = series;
+        chart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(chart, range));
+        chart.subscribeCrosshairMove((param) => onCrosshairMove(param));
+        new ResizeObserver(() => {
+          chart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
+        }).observe(el);
+      }
+
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(mainChart, range));
+      mainChart.subscribeCrosshairMove((param) => onCrosshairMove(param));
+
+      new ResizeObserver(() => {
+        mainChart.applyOptions({ width: mainEl.clientWidth, height: mainEl.clientHeight });
+      }).observe(mainEl);
+    }
+
+    function syncAllRanges(source, range) {
+      if (syncing || !range) return;
+      syncing = true;
+      for (const chart of [mainChart, ...Object.values(subCharts)]) {
+        if (chart && chart !== source) chart.timeScale().setVisibleLogicalRange(range);
+      }
+      syncing = false;
+    }
+
+    function onCrosshairMove(param) {
+      if (syncingCrosshair) return;
+      if (!param || !param.time) {
+        setHoverInfo(currentBars[currentBars.length - 1]);
+        clearCrosshairs();
+        return;
+      }
+      const tradeDate = timeToTradeDate(param.time);
+      const bar = currentBars.find((b) => b.trade_date === tradeDate);
+      setHoverInfo(bar || null);
+      if (bar) syncCrosshairs(bar);
+    }
+
+    function clearCrosshairs() {
+      syncingCrosshair = true;
+      for (const chart of [mainChart, ...Object.values(subCharts)]) {
+        if (chart?.clearCrosshairPosition) chart.clearCrosshairPosition();
+      }
+      syncingCrosshair = false;
+    }
+
+    function syncCrosshairs(bar) {
+      syncingCrosshair = true;
+      if (mainChart?.setCrosshairPosition) mainChart.setCrosshairPosition(bar.close, bar.trade_date, candle);
+      for (const key of subIndicatorKeys) {
+        const ind = indicators[key];
+        const value = Number(bar[ind.valueKey] || 0);
+        if (subCharts[key]?.setCrosshairPosition) {
+          subCharts[key].setCrosshairPosition(value, bar.trade_date, subSeries[key]);
+        }
+      }
+      syncingCrosshair = false;
+    }
+
+    function renderSubCharts() {
+      if (!currentBars.length) return;
+      for (const key of subIndicatorKeys) {
+        const ind = indicators[key];
+        subSeries[key].setData(currentBars.map((b) => ({
+          time: b.trade_date,
+          value: Number(b[ind.valueKey] || 0),
+          color: ind.color(b),
+        })));
+      }
+    }
+
+    async function loadKline() {
+      const raw = stockSel.value;
+      if (!raw) {
+        setStatus("请先选择证券");
+        return;
+      }
+      const { exchange, stock_code, name } = JSON.parse(raw);
+      currentStockText = `${stock_code} ${name}`;
+      setStatus("加载中...");
+      $("load").disabled = true;
+      try {
+        const url = `/api/kline?${new URLSearchParams({
+          exchange,
+          stock_code,
+          adjust: "",
+        })}`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(await r.text());
+        currentBars = await r.json();
+        if (!mainChart || Object.keys(subCharts).length !== subIndicatorKeys.length) ensureCharts();
+
+        candle.setData(currentBars.map((b) => ({
+          time: b.trade_date,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        })));
+        renderSubCharts();
+        mainChart.timeScale().fitContent();
+        for (const chart of Object.values(subCharts)) chart.timeScale().fitContent();
+        $("main-title").textContent = `${stock_code} ${name} · 日 K`;
+        setHoverInfo(currentBars[currentBars.length - 1]);
+        setStatus(`${stock_code} ${name} · ${currentBars.length} 根日线`);
+      } catch (e) {
+        setStatus(String(e.message || e));
+        console.error(e);
+      } finally {
+        $("load").disabled = false;
+      }
+    }
+
+    let debounce;
+    async function refreshNormalStocks({ loadFirst = false } = {}) {
+      const list = await fetchStocks();
+      fillSelect(list);
+      setStatus(`候选 ${list.length} 条${filterMode.value === "normal" ? "（可搜索缩小范围）" : ""}`);
+      if (loadFirst && list.length) await loadKline();
+    }
+
+    async function refreshLimitUpDates() {
+      const dates = await fetchLimitUpDates();
+      fillLimitDates(dates);
+      if (!dates.length) {
+        fillSelect([]);
+        setStatus("涨停候选表暂无命中日期");
+        return;
+      }
+      await refreshLimitUpStocks({ loadFirst: true });
+    }
+
+    async function refreshLimitUpStocks({ loadFirst = true } = {}) {
+      const tradeDate = limitDateSel.value;
+      if (!tradeDate) {
+        fillSelect([]);
+        setStatus("请先选择涨停日");
+        return;
+      }
+      const list = await fetchLimitUpStocks(tradeDate);
+      fillSelect(list, { preserveCurrent: false });
+      setStatus(`${tradeDate} 涨停候选 ${list.length} 只`);
+      if (loadFirst && list.length) await loadKline();
+    }
+
+    async function setFilterMode(mode) {
+      const isLimitUp = mode === "limit-up";
+      $("search-label").classList.toggle("is-hidden", isLimitUp);
+      $("limit-date-label").classList.toggle("is-hidden", !isLimitUp);
+      try {
+        if (isLimitUp) {
+          await refreshLimitUpDates();
+        } else {
+          await refreshNormalStocks({ loadFirst: true });
+        }
+      } catch (e) {
+        setStatus(String(e.message || e));
+      }
+    }
+
+    $("q").addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        try {
+          await refreshNormalStocks();
+        } catch (e) {
+          setStatus(String(e.message || e));
+        }
+      }, 280);
+    });
+
+    filterMode.addEventListener("change", () => setFilterMode(filterMode.value));
+    limitDateSel.addEventListener("change", () => refreshLimitUpStocks({ loadFirst: true }));
+    $("load").addEventListener("click", loadKline);
+    stockSel.addEventListener("change", loadKline);
+    (async function init() {
+      try {
+        ensureCharts();
+        await refreshNormalStocks({ loadFirst: true });
+      } catch (e) {
+        setStatus(String(e.message || e));
+      }
+    })();
+  </script>
+</body>
+</html>
