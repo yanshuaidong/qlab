@@ -11,8 +11,8 @@ import akshare as ak
 import pandas as pd
 
 
-DEFAULT_DB_PATH = Path(__file__).with_name("data") / "stock.sqlite"
-DEFAULT_STOCK_TABLE = "stock_limit_up_candidates_120"
+DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "qlab_coll2_stock.sqlite"
+DEFAULT_STOCK_TABLE = "stock_basic_info"
 FUND_FLOW_TABLE = "stock_individual_fund_flow"
 FUND_FLOW_LOG_TABLE = "stock_individual_fund_flow_import_log"
 SOURCE_NAME = "akshare.stock_individual_fund_flow"
@@ -372,7 +372,12 @@ def save_individual_fund_flow(
             ]
 
         total = len(stocks)
-        print(f"Found {total} stocks in {db_path}")
+        if skip_ok:
+            print(
+                f"待拉取 {total} 只（{db_path}；已跳过 {FUND_FLOW_LOG_TABLE} 中 status=ok）"
+            )
+        else:
+            print(f"待拉取 {total} 只（{db_path}；--no-skip 全量重拉）")
 
         for index, stock in enumerate(stocks, start=1):
             started_at = datetime.now().isoformat(timespec="seconds")
@@ -393,7 +398,7 @@ def save_individual_fund_flow(
                 conn.commit()
                 print(
                     f"[{index}/{total}] {stock['code']} {stock['name']}: "
-                    f"{rows_saved} rows"
+                    f"{rows_saved} 行"
                 )
             except Exception as exc:
                 conn.rollback()
@@ -408,9 +413,9 @@ def save_individual_fund_flow(
                 conn.commit()
                 print(
                     f"[{index}/{total}] {stock['code']} {stock['name']}: "
-                    f"failed - {exc}"
+                    f"失败 - {exc}"
                 )
-                print("Stopped after failure; remaining stocks were not fetched.")
+                print("遇错即停；未处理后续股票。")
                 raise SystemExit(1)
 
             if sleep_seconds > 0 and index < total:
@@ -419,45 +424,50 @@ def save_individual_fund_flow(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch Eastmoney individual stock fund-flow data into SQLite."
+        description=(
+            "使用 akshare.stock_individual_fund_flow 拉取东方财富个股日级资金流向，"
+            "写入 SQLite（默认跳过 {log} 中 status=ok 的股票）。".format(
+                log=FUND_FLOW_LOG_TABLE
+            )
+        )
     )
     parser.add_argument(
         "--db",
         type=Path,
         default=DEFAULT_DB_PATH,
-        help=f"SQLite database path. Default: {DEFAULT_DB_PATH}",
+        help=f"SQLite 路径。默认: {DEFAULT_DB_PATH}",
     )
     parser.add_argument(
         "--stock-table",
         default=DEFAULT_STOCK_TABLE,
-        help=f"Stock pool table to read. Default: {DEFAULT_STOCK_TABLE}",
+        help=f"股票池表。默认: {DEFAULT_STOCK_TABLE}",
     )
     parser.add_argument(
         "--exchanges",
-        default="SSE,SZSE",
-        help="Comma-separated exchanges from the stock pool table.",
+        default="SSE,SZSE,BSE",
+        help="逗号分隔的 exchange 过滤。",
     )
     parser.add_argument(
         "--security-types",
         default="A股",
-        help="Comma-separated security types from the stock pool table.",
+        help="逗号分隔的 security_type 过滤。",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Limit number of stocks. Useful for testing.",
+        help="仅处理前 N 只（调试用）。",
     )
     parser.add_argument(
         "--sleep",
         type=float,
-        default=0.5,
-        help="Seconds to sleep between each stock.",
+        default=1.0,
+        help="每只股票请求之间的休眠秒数。",
     )
     parser.add_argument(
-        "--skip-ok",
+        "--no-skip",
         action="store_true",
-        help=f"Skip stocks already marked ok in {FUND_FLOW_LOG_TABLE}.",
+        help="不跳过已成功的股票（全量重拉并覆盖最近窗口数据）。",
     )
     return parser.parse_args()
 
@@ -471,7 +481,7 @@ def main() -> None:
         security_types=comma_values(args.security_types),
         limit=args.limit,
         sleep_seconds=args.sleep,
-        skip_ok=args.skip_ok,
+        skip_ok=not args.no_skip,
     )
 
 
