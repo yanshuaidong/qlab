@@ -228,3 +228,8 @@ collect/**/*.sqlite3
 collect/**/*.sqlite-journal
 collect/**/*.sqlite-wal
 collect/**/*.sqlite-shm
+
+# Eastmoney browser secrets / pull output (collect/coll3)
+collect/coll3/clist_browser.env
+collect/coll3/clist_browser.curl
+collect/coll3/clist_data/

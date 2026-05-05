@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -323,3 +324,10 @@ def index() -> FileResponse:
     if not index_path.is_file():
         raise HTTPException(status_code=500, detail=f"缺少静态页: {index_path}")
     return FileResponse(index_path, media_type="text/html; charset=utf-8")
+
+
+app.mount(
+    "/assets",
+    StaticFiles(directory=str(STATIC_DIR)),
+    name="assets",
+)

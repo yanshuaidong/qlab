@@ -28,7 +28,7 @@
     }
     header {
       display: grid;
-      grid-template-columns: auto minmax(8rem, 10rem) minmax(12rem, 18rem) minmax(11rem, 15rem) minmax(18rem, 26rem) auto 1fr;
+      grid-template-columns: auto minmax(8rem, 10rem) minmax(12rem, 18rem) minmax(11rem, 15rem) auto minmax(18rem, 26rem) auto 1fr;
       gap: 0.75rem;
       align-items: center;
       min-height: 58px;
@@ -78,6 +78,22 @@
     }
     button:hover { filter: brightness(1.08); }
     button:disabled { opacity: 0.55; cursor: not-allowed; }
+    #plan3-nav {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+    }
+    #plan3-nav button {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      padding: 0 0.65rem;
+    }
+    #plan3-nav button:hover {
+      filter: none;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
     .is-hidden { display: none; }
     #status {
       justify-self: end;
@@ -177,10 +193,15 @@
       <select id="filter-mode">
         <option value="normal">普通搜索</option>
         <option value="limit-up">涨停候选</option>
+        <option value="plan3">Plan3·严格无卖出64</option>
       </select>
     </label>
     <label id="search-label">筛选 <input type="search" id="q" placeholder="代码或名称" /></label>
     <label id="limit-date-label" class="is-hidden">涨停日 <select id="limit-date"></select></label>
+    <div id="plan3-nav" class="is-hidden">
+      <button type="button" id="plan3-prev" title="快捷键 ←">上一只</button>
+      <button type="button" id="plan3-next" title="快捷键 →">下一只</button>
+    </div>
     <label>证券 <select id="stock"></select></label>
     <button type="button" id="load">加载</button>
     <span id="status"></span>
@@ -282,6 +303,7 @@
     let currentStockText = "";
     let syncing = false;
     let syncingCrosshair = false;
+    let suppressStockChangeLoad = false;
 
     function setStatus(msg) {
       statusEl.textContent = msg || "";
@@ -420,8 +442,8 @@
       return r.json();
     }
 
-    async function fetchLimitUpStocks(tradeDate) {
-      const r = await fetch(`/api/limit-up/stocks?trade_date=${encodeURIComponent(tradeDate)}`);
+    async function fetchPlan3List() {
+      const r = await fetch("/assets/plan3_strict_no_exit_64.json");
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     }
@@ -449,8 +471,10 @@
           exchange: s.exchange,
           stock_code: s.stock_code,
           name: s.name,
+          ...(s.event_date ? { event_date: s.event_date } : {}),
         });
         const tags = [];
+        if (s.event_date) tags.push(`事件日 ${s.event_date}`);
         if (s.limit_up_pct_change != null) tags.push(`涨幅 ${formatPct(s.limit_up_pct_change)}`);
         if (s.limit_up_count_120 != null) tags.push(`120日 ${s.limit_up_count_120}次`);
         if (s.board) tags.push(s.board);
@@ -610,7 +634,7 @@
         setStatus("请先选择证券");
         return;
       }
-      const { exchange, stock_code, name } = JSON.parse(raw);
+      const { exchange, stock_code, name, event_date: eventDate } = JSON.parse(raw);
       currentStockText = `${stock_code} ${name}`;
       setStatus("加载中...");
       $("load").disabled = true;
@@ -632,10 +656,29 @@
           low: b.low,
           close: b.close,
         })));
+        if (typeof candle.setMarkers === "function") {
+          const hasEventBar =
+            eventDate && currentBars.some((b) => b.trade_date === eventDate);
+          candle.setMarkers(
+            hasEventBar
+              ? [
+                  {
+                    time: eventDate,
+                    position: "belowBar",
+                    color: "#f59e0b",
+                    shape: "circle",
+                    text: "事件日",
+                  },
+                ]
+              : []
+          );
+        }
         renderSubCharts();
         mainChart.timeScale().fitContent();
         for (const chart of Object.values(subCharts)) chart.timeScale().fitContent();
-        $("main-title").textContent = `${stock_code} ${name} · 日 K`;
+        $("main-title").textContent = `${stock_code} ${name} · 日 K${
+          eventDate ? ` · 事件日 ${eventDate}` : ""
+        }`;
         setHoverInfo(currentBars[currentBars.length - 1]);
         setStatus(`${stock_code} ${name} · ${currentBars.length} 根日线`);
       } catch (e) {
@@ -678,19 +721,43 @@
       if (loadFirst && list.length) await loadKline();
     }
 
+    async function refreshPlan3Stocks({ loadFirst = true } = {}) {
+      const data = await fetchPlan3List();
+      const list = data.items || [];
+      fillSelect(list, { preserveCurrent: false });
+      setStatus(
+        `${data.title || "Plan3"} · ${list.length} 只（←→ 快捷切换）`
+      );
+      if (loadFirst && list.length) await loadKline();
+    }
+
     async function setFilterMode(mode) {
       const isLimitUp = mode === "limit-up";
-      $("search-label").classList.toggle("is-hidden", isLimitUp);
+      const isPlan3 = mode === "plan3";
+      $("search-label").classList.toggle("is-hidden", isLimitUp || isPlan3);
       $("limit-date-label").classList.toggle("is-hidden", !isLimitUp);
+      $("plan3-nav").classList.toggle("is-hidden", !isPlan3);
       try {
         if (isLimitUp) {
           await refreshLimitUpDates();
+        } else if (isPlan3) {
+          await refreshPlan3Stocks({ loadFirst: true });
         } else {
           await refreshNormalStocks({ loadFirst: true });
         }
       } catch (e) {
         setStatus(String(e.message || e));
       }
+    }
+
+    function plan3Navigate(delta) {
+      if (filterMode.value !== "plan3") return;
+      const n = stockSel.options.length;
+      if (!n) return;
+      suppressStockChangeLoad = true;
+      stockSel.selectedIndex = (stockSel.selectedIndex + delta + n) % n;
+      suppressStockChangeLoad = false;
+      loadKline();
     }
 
     $("q").addEventListener("input", () => {
@@ -706,8 +773,26 @@
 
     filterMode.addEventListener("change", () => setFilterMode(filterMode.value));
     limitDateSel.addEventListener("change", () => refreshLimitUpStocks({ loadFirst: true }));
+    $("plan3-prev").addEventListener("click", () => plan3Navigate(-1));
+    $("plan3-next").addEventListener("click", () => plan3Navigate(1));
     $("load").addEventListener("click", loadKline);
-    stockSel.addEventListener("change", loadKline);
+    stockSel.addEventListener("change", () => {
+      if (suppressStockChangeLoad) return;
+      loadKline();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (filterMode.value !== "plan3") return;
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        plan3Navigate(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        plan3Navigate(1);
+      }
+    });
     (async function init() {
       try {
         ensureCharts();
