@@ -229,6 +229,9 @@ collect/**/*.sqlite-journal
 collect/**/*.sqlite-wal
 collect/**/*.sqlite-shm
 
+# Generated plots (output from backtest scripts)
+research/futures/plan3/artifacts/plots/*.png
+
 # Eastmoney browser secrets / pull output (collect/coll3)
 collect/coll3/clist_browser.env
 collect/coll3/clist_browser.curl
