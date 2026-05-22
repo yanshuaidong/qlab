@@ -191,6 +191,10 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# Claude Code settings (contains MCP tokens & API keys)
+.claude/settings.json
+.claude/settings.local.json
+
 # PyPI configuration file
 .pypirc
 
