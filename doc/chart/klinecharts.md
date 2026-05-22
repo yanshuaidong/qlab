@@ -1,3 +1,12 @@
+获取KLineChart
+KLineChart 支持多种下载方式，你可以通过 npm 、 yarn 、 pnpm 或 bun 包管理工具下载。另外，也提供了 umd 版本，所以也可以从 cdn 网站  或  等进行下载，使用全局变量 klinecharts 即可。
+
+推荐使用包管理工具的方式进行开发，不仅可在开发环境轻松调试，也可放心地在生产环境打包部署使用，享受整个生态圈和工具链带来的诸多好处。
+
+
+npm install klinecharts
+
+
 https://github.com/klinecharts/KLineChart
 
 https://klinecharts.com/guide/introduction
