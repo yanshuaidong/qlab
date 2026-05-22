@@ -236,3 +236,16 @@ research/futures/plan3/artifacts/plots/*.png
 collect/coll3/clist_browser.env
 collect/coll3/clist_browser.curl
 collect/coll3/clist_data/
+
+# quantlab: 训练模型文件（二进制 pkl + 配置元数据）
+quantlab/**/models/
+
+# quantlab: 回测/预测输出
+quantlab/**/output/
+
+# quantlab: 运行时状态（持仓、组合资金）
+quantlab/**/portfolio/
+quantlab/**/portfolio.json
+
+# quantlab: Jupyter notebooks（含输出数据）
+quantlab/**/notebooks/
