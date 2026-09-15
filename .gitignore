@@ -210,6 +210,9 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Node.js
+node_modules/
+
 # Local SQLite databases (machine-specific; do not commit)
 *.sqlite
 *.sqlite-journal
