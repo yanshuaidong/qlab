@@ -1,0 +1,39 @@
+{
+  "backend": "sklearn",
+  "train_end": "2026-01-15",
+  "train_ratio": 0.7,
+  "feature_columns": [
+    "main_force",
+    "retail",
+    "m3",
+    "main_score",
+    "z_main",
+    "diff2",
+    "run_streak",
+    "cum_z_5",
+    "cum_z_10",
+    "res_main_close_3",
+    "res_retail_close_opp_3",
+    "res_main_retail_opp_3",
+    "main_minus_retail",
+    "side"
+  ],
+  "metrics": [
+    {
+      "split": "train",
+      "n": 41,
+      "positive_rate": 0.6097560975609756,
+      "accuracy": 0.6829268292682927,
+      "f1": 0.7796610169491526,
+      "auc": 0.7475
+    },
+    {
+      "split": "valid",
+      "n": 22,
+      "positive_rate": 0.7727272727272727,
+      "accuracy": 0.6818181818181818,
+      "f1": 0.7878787878787878,
+      "auc": 0.5176470588235293
+    }
+  ]
+}

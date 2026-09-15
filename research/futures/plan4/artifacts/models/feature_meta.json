@@ -1,0 +1,18 @@
+{
+  "feature_columns": [
+    "main_force",
+    "retail",
+    "m3",
+    "main_score",
+    "z_main",
+    "diff2",
+    "run_streak",
+    "cum_z_5",
+    "cum_z_10",
+    "res_main_close_3",
+    "res_retail_close_opp_3",
+    "res_main_retail_opp_3",
+    "main_minus_retail",
+    "side"
+  ]
+}
