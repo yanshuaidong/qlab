@@ -1,8 +1,11 @@
-# tushare_moneyflow/data.sqlite
+# storage/stock/data.sqlite
 
-本地 Tushare 资金流向 SQLite，路径：`storage/stock/tushare_moneyflow/data.sqlite`。
+本地 Tushare SQLite，路径：`storage/stock/data.sqlite`。资金流向与 A 股未复权日线写在同一库。
 
-采集入口：`python collect/main.py`（默认近 365 个自然日；可用 `--days 30` 改窗口，也可跟接口名只跑某一个，例如 `python collect/main.py --days 365 moneyflow_dc`）。数据来源为 Tushare Pro，token 从仓库根目录 `.env` 的 `TUSHARE_TOKEN` 读取。冲突时 UPSERT，可重复跑。
+- 日线采集：`python collect/daily.py`（默认近 365 个自然日；可用 `--days 5` 试跑）
+- 资金流向：`python collect/main.py`（默认近 365 个自然日；可用 `--days 30` 改窗口，也可跟接口名只跑某一个，例如 `python collect/main.py --days 365 moneyflow_dc`）
+
+数据来源为 Tushare Pro，token 从仓库根目录 `.env` 的 `TUSHARE_TOKEN` 读取。冲突时 UPSERT，可重复跑。
 
 下文中的行数、日期范围、文件大小在文档编写时由数据库实际查询得到；后续追加导入请以库里为准。
 
@@ -10,12 +13,13 @@
 
 | 项目 | 值 |
 |------|-----|
-| 路径 | `storage/stock/tushare_moneyflow/data.sqlite` |
-| 约大小 | 约 959.8 MiB（1,006,436,352 字节） |
+| 路径 | `storage/stock/data.sqlite` |
+| 约大小 | 约 1227.8 MiB（1,287,389,184 字节） |
 | 引擎 | SQLite 3 |
 | 采集窗口 | 2025-09-15 ~ 2026-09-15（近 365 个自然日） |
-| 实际交易日 | 2025-09-15 ~ 2026-09-14，共 242 个开市日 |
-| 最近一次采集 | 2026-09-15 约 14:33～14:53 |
+| 日线交易日 | 2025-09-15 ~ 2026-09-15，共 243 个开市日 |
+| 资金流交易日 | 2025-09-15 ~ 2026-09-14，共 242 个开市日 |
+| 最近一次日线采集 | 2026-09-15 约 20:23～20:27 |
 
 2026-09-15 当天在交易日历中为开市日，但盘后资金流尚未发布，各接口该日返回 0 行，属正常情况。
 
@@ -27,6 +31,7 @@
 
 | 表名 | 行数 | 交易日数 | 主键 | 简要说明 |
 |------|------|----------|------|----------|
+| `daily` | 1,332,015 | 243 | `(ts_code, trade_date)` | A 股未复权日线（Tushare `daily`） |
 | `moneyflow` | 1,263,693 | 242 | `(ts_code, trade_date)` | 个股资金流向（Tushare L2 主动买卖单） |
 | `moneyflow_dc` | 1,438,347 | 242 | `(ts_code, trade_date)` | 东财个股资金流向 |
 | `moneyflow_ths` | 1,245,815 | 242 | `(ts_code, trade_date)` | 同花顺个股资金流向 |
@@ -35,11 +40,34 @@
 | `moneyflow_ind_ths` | 21,780 | 242 | `(ts_code, trade_date)` | 同花顺行业资金流向 |
 | `moneyflow_cnt_ths` | 93,384 | 242 | `(ts_code, trade_date)` | 同花顺概念板块资金流向 |
 | `moneyflow_hsgt` | 235 | 235 | `(trade_date)` | 沪深港通资金流向 |
-| `import_log` | 17 | — | `id` | 采集任务日志 |
+| `import_log` | 20 | — | `id` | 采集任务日志 |
 
 `moneyflow_ind_dc` 按 `content_type`：行业 121,374、概念 113,876、地域 7,502。各业务表主键无重复。
 
 日期字段入库为 `YYYY-MM-DD`。每张业务表都有 `updated_at`（本地写入时间，ISO 8601）。
+
+---
+
+## `daily`
+
+接口：`daily`。A 股未复权日线，停牌日无记录。交易日每天 15 点～16 点之间入库。当前单日约 5420～5550 行，未超过 6000 上限；脚本仍保留 `offset/limit` 分页。`ah_vol` / `ah_amount` 自 2026-07-06 起才有数据（当前 52 个交易日、269,763 行非空）。
+
+采集入口：`python collect/daily.py`。2026-09-15 当天日线已入库。
+
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| `ts_code` | TEXT | TS 代码 |
+| `trade_date` | TEXT | 交易日 |
+| `open` / `high` / `low` / `close` | REAL | 开高低收（未复权） |
+| `pre_close` | REAL | 昨收价（除权价） |
+| `change` | REAL | 涨跌额 |
+| `pct_chg` | REAL | 涨跌幅（%），基于除权后昨收 |
+| `vol` | REAL | 成交量（手） |
+| `amount` | REAL | 成交额（千元） |
+| `ah_vol` / `ah_amount` | REAL | 盘后成交量（手）/ 成交额（千元） |
+| `updated_at` | TEXT | 本地写入时间 |
+
+索引：`idx_daily_trade_date`、`idx_daily_ts_code`。
 
 ---
 
