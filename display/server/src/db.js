@@ -50,16 +50,75 @@ export function openDb() {
     )
   }
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS trend_mark (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts_code TEXT NOT NULL,
-      trade_date TEXT NOT NULL,
-      mark_type TEXT NOT NULL CHECK (mark_type IN ('start', 'end')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-      UNIQUE (ts_code, trade_date)
-    )
-  `)
+  ensureTrendMark(db)
 
   return { db, dbPath }
+}
+
+const TREND_MARK_DDL = `
+  CREATE TABLE trend_mark (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts_code TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    mark_type TEXT NOT NULL CHECK (mark_type IN ('correct', 'fail')),
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (ts_code, trade_date)
+  )
+`
+
+function ensureTrendMark(db) {
+  const existing = db
+    .prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'trend_mark'`,
+    )
+    .get()
+  if (!existing) {
+    db.exec(TREND_MARK_DDL)
+    return
+  }
+
+  const sql = existing.sql || ''
+  const hasReason = /\breason\b/i.test(sql)
+  const isNewTypes = sql.includes("'correct'") && sql.includes("'fail'")
+  if (hasReason && isNewTypes) return
+
+  const cols = db.prepare('PRAGMA table_info(trend_mark)').all()
+  const colNames = new Set(cols.map((col) => col.name))
+  const reasonExpr = colNames.has('reason') ? `COALESCE(reason, '')` : `''`
+
+  db.exec('BEGIN')
+  try {
+    db.exec('DROP TABLE IF EXISTS trend_mark_new')
+    db.exec(`
+      CREATE TABLE trend_mark_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_code TEXT NOT NULL,
+        trade_date TEXT NOT NULL,
+        mark_type TEXT NOT NULL CHECK (mark_type IN ('correct', 'fail')),
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        UNIQUE (ts_code, trade_date)
+      )
+    `)
+    db.exec(`
+      INSERT INTO trend_mark_new (id, ts_code, trade_date, mark_type, reason, created_at)
+      SELECT id, ts_code, trade_date,
+             CASE mark_type
+               WHEN 'start' THEN 'correct'
+               WHEN 'correct' THEN 'correct'
+               WHEN 'fail' THEN 'fail'
+             END,
+             ${reasonExpr},
+             created_at
+      FROM trend_mark
+      WHERE mark_type IN ('start', 'correct', 'fail')
+    `)
+    db.exec('DROP TABLE trend_mark')
+    db.exec('ALTER TABLE trend_mark_new RENAME TO trend_mark')
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
 }

@@ -7,6 +7,7 @@
         :pane-stretch="paneStretch"
         :fit-token="fitToken"
         @click="onChartClick"
+        @hover="onChartHover"
       />
       <div class="kline-overlays" :style="overlayGridStyle">
         <div class="overlay-pane overlay-sub overlay-main">
@@ -31,6 +32,21 @@
             >
               下一个
             </button>
+          </div>
+          <div v-if="hoverStats" class="kline-legend">
+            <span>{{ hoverStats.date }}</span>
+            <span>开 <b>{{ hoverStats.open }}</b></span>
+            <span>高 <b>{{ hoverStats.high }}</b></span>
+            <span>低 <b>{{ hoverStats.low }}</b></span>
+            <span :class="hoverStats.cls">
+              收 <b>{{ hoverStats.close }}</b>
+            </span>
+            <span :class="hoverStats.cls">
+              {{ hoverStats.change }} {{ hoverStats.pct }}
+            </span>
+            <span>振幅 {{ hoverStats.amp }}</span>
+            <span>量 {{ hoverStats.vol }}</span>
+            <span>额 {{ hoverStats.amount }}</span>
           </div>
           <div class="pane-metric kline-stock-tools">
             <label class="kline-mv-filter">
@@ -71,7 +87,16 @@
           :key="pane.id"
           class="overlay-pane overlay-sub"
         >
-          <span class="pane-title">{{ pane.title }}</span>
+          <span class="pane-title">
+            {{ pane.title }}
+            <span
+              v-if="subHover[pane.id]"
+              class="pane-hover-value"
+              :class="subHover[pane.id].cls"
+            >
+              {{ subHover[pane.id].text }}
+            </span>
+          </span>
           <el-select
             v-if="pane.fields"
             v-model="metrics[pane.id]"
@@ -92,18 +117,27 @@
     </div>
     <el-dialog
       v-model="markDialog.visible"
-      title="趋势标记"
-      width="380px"
+      title="标记"
+      width="440px"
       append-to-body
       align-center
     >
       <p class="mark-date">交易日：{{ markDialog.tradeDate }}</p>
       <el-radio-group v-model="markDialog.markType">
-        <el-radio value="start">起点</el-radio>
-        <el-radio value="end">终点</el-radio>
+        <el-radio value="correct">正确点</el-radio>
+        <el-radio value="fail">失败点</el-radio>
       </el-radio-group>
+      <el-input
+        v-model="markDialog.reason"
+        class="mark-reason"
+        type="textarea"
+        :rows="3"
+        :placeholder="markReasonPlaceholder"
+        maxlength="500"
+        show-word-limit
+      />
       <p v-if="markDialog.existing" class="hint mark-hint">
-        当前已标记为「{{ markTypeLabel(markDialog.existing.mark_type) }}」，可改类型或删除。
+        当前已标记为「{{ markTypeLabel(markDialog.existing.mark_type) }}」，可改类型、原因或删除。
       </p>
       <template #footer>
         <el-button
@@ -134,7 +168,12 @@ import {
   formatAmount,
   formatMarketCapYi,
   formatPercent,
+  formatPrice,
+  formatSigned,
+  formatSignedPercent,
+  formatVolume,
   getJson,
+  pctClass,
   sendJson,
   toTradeDate,
 } from '../api.js'
@@ -142,7 +181,7 @@ import {
 const DEFAULT_MIN_MV_YI = 1
 
 const DC_FIELDS = [
-  { id: 'net_amount', label: '资金净流入(万元)', kind: 'amount' },
+  { id: 'net_amount', label: '主力净流入额(万元)', kind: 'amount' },
   { id: 'net_amount_rate', label: '主力净流入占比(%)', kind: 'percent' },
   { id: 'buy_elg_amount', label: '超大单净流入额(万元)', kind: 'amount' },
   { id: 'buy_elg_amount_rate', label: '超大单净流入占比(%)', kind: 'percent' },
@@ -166,11 +205,18 @@ const THS_FIELDS = [
 ]
 
 const L2_FIELDS = [
-  { id: 'net_amount', label: '资金净流入(万元)', kind: 'amount' },
+  { id: 'net_amount', label: '主力净流入额(万元)', kind: 'amount' },
+  { id: 'net_amount_rate', label: '主力净流入占比(%)', kind: 'percent' },
+  { id: 'mf_net_amount', label: '主动买卖净流入(万元)', kind: 'amount' },
+  { id: 'mf_net_amount_rate', label: '主动买卖净流入占比(%)', kind: 'percent' },
   { id: 'buy_elg_amount', label: '超大单净流入额(万元)', kind: 'amount' },
+  { id: 'buy_elg_amount_rate', label: '超大单净流入占比(%)', kind: 'percent' },
   { id: 'buy_lg_amount', label: '今日大单净流入额(万元)', kind: 'amount' },
+  { id: 'buy_lg_amount_rate', label: '今日大单净流入占比(%)', kind: 'percent' },
   { id: 'buy_md_amount', label: '今日中单净流入额(万元)', kind: 'amount' },
+  { id: 'buy_md_amount_rate', label: '今日中单净流入占比(%)', kind: 'percent' },
   { id: 'buy_sm_amount', label: '今日小单净流入额(万元)', kind: 'amount' },
+  { id: 'buy_sm_amount_rate', label: '今日小单净流入占比(%)', kind: 'percent' },
 ]
 
 const paneStretch = [3.2, 0.85, 1, 1, 1]
@@ -195,11 +241,13 @@ const metrics = reactive({
 })
 const error = ref('')
 const loading = ref(false)
+const hoverDate = ref('')
 const marks = ref([])
 const markDialog = reactive({
   visible: false,
   tradeDate: '',
-  markType: 'start',
+  markType: 'correct',
+  reason: '',
   existing: null,
   saving: false,
 })
@@ -240,35 +288,108 @@ const fitToken = computed(() => {
 })
 
 function markTypeLabel(type) {
-  return type === 'end' ? '终点' : '起点'
+  return type === 'fail' ? '失败点' : '正确点'
 }
 
-function suggestedMarkType() {
-  const sorted = [...marks.value].sort((a, b) =>
-    a.trade_date.localeCompare(b.trade_date),
-  )
-  let open = 0
-  for (const item of sorted) {
-    open += item.mark_type === 'start' ? 1 : -1
-  }
-  return open > 0 ? 'end' : 'start'
-}
+const markReasonPlaceholder = computed(() =>
+  markDialog.markType === 'fail' ? '失败的原因（可选）' : '正确的原因（可选）',
+)
 
 function candleMarkers() {
-  return marks.value.map((item) => ({
-    id: String(item.id),
-    time: item.trade_date,
-    position: item.mark_type === 'start' ? 'belowBar' : 'aboveBar',
-    shape: item.mark_type === 'start' ? 'arrowUp' : 'arrowDown',
-    color: item.mark_type === 'start' ? '#26a69a' : '#ef5350',
-    text: item.mark_type === 'start' ? '起' : '终',
-    size: 1.25,
-  }))
+  return marks.value.map((item) => {
+    const isCorrect = item.mark_type !== 'fail'
+    return {
+      id: String(item.id),
+      time: item.trade_date,
+      position: isCorrect ? 'belowBar' : 'aboveBar',
+      shape: isCorrect ? 'arrowUp' : 'arrowDown',
+      color: isCorrect ? '#26a69a' : '#ef5350',
+      text: isCorrect ? '正' : '败',
+      size: 1.25,
+    }
+  })
 }
 
 function fieldMeta(fields, id) {
   return fields.find((item) => item.id === id) || fields[0]
 }
+
+function indexRows(rows) {
+  const map = Object.create(null)
+  for (const row of rows) map[row.trade_date] = row
+  return map
+}
+
+function amplitudePct(row) {
+  if (row?.high == null || row?.low == null) return null
+  const base = row.pre_close || row.open
+  if (!base) return null
+  return ((row.high - row.low) / base) * 100
+}
+
+const dailyByDate = computed(() => indexRows(dailyRows.value))
+const dcByDate = computed(() => indexRows(dcRows.value))
+const thsByDate = computed(() => indexRows(thsRows.value))
+const l2ByDate = computed(() => indexRows(l2Rows.value))
+
+const activeDaily = computed(() => {
+  const rows = dailyRows.value
+  if (!rows.length) return null
+  return dailyByDate.value[hoverDate.value] || rows[rows.length - 1]
+})
+
+const hoverStats = computed(() => {
+  const row = activeDaily.value
+  if (!row) return null
+  const change =
+    row.change ??
+    (row.close != null && row.pre_close != null ? row.close - row.pre_close : null)
+  const pct =
+    row.pct_chg ?? (row.pre_close ? (change / row.pre_close) * 100 : null)
+  return {
+    date: row.trade_date,
+    open: formatPrice(row.open),
+    high: formatPrice(row.high),
+    low: formatPrice(row.low),
+    close: formatPrice(row.close),
+    change: formatSigned(change),
+    pct: formatSignedPercent(pct),
+    amp: formatPercent(amplitudePct(row)),
+    vol: formatVolume(row.vol),
+    amount: formatAmount(row.amount, '千元'),
+    cls: pctClass(change ?? pct),
+  }
+})
+
+const subHover = computed(() => {
+  const date = activeDaily.value?.trade_date
+  if (!date) return {}
+  const flowPanes = [
+    ['dc', DC_FIELDS, dcByDate.value],
+    ['ths', THS_FIELDS, thsByDate.value],
+    ['l2', L2_FIELDS, l2ByDate.value],
+  ]
+  const result = {
+    volume: {
+      text: formatVolume(activeDaily.value.vol),
+      cls: pctClass(activeDaily.value.change ?? activeDaily.value.pct_chg),
+    },
+  }
+  for (const [id, fields, byDate] of flowPanes) {
+    const meta = fieldMeta(fields, metrics[id])
+    const value = byDate[date]?.[meta.id]
+    result[id] = {
+      text:
+        value == null
+          ? '—'
+          : meta.kind === 'percent'
+            ? formatSignedPercent(value)
+            : formatAmount(value, '万元'),
+      cls: pctClass(value),
+    }
+  }
+  return result
+})
 
 function flowSeries(id, paneIndex, rows, fieldId, fields) {
   const meta = fieldMeta(fields, fieldId)
@@ -351,6 +472,7 @@ const priceScales = {
 async function loadStock(item) {
   const seq = ++loadSeq
   stock.value = item
+  hoverDate.value = ''
   markDialog.visible = false
   loading.value = true
   error.value = ''
@@ -455,6 +577,11 @@ function goNeighbor(delta) {
   loadStock(next)
 }
 
+function onChartHover(payload) {
+  const next = payload?.time ? toTradeDate(payload.time) : ''
+  if (next !== hoverDate.value) hoverDate.value = next
+}
+
 function onChartClick(payload) {
   if (payload.paneIndex !== 0 || loading.value || !stock.value) return
   const tradeDate = toTradeDate(payload.time)
@@ -465,7 +592,8 @@ function onChartClick(payload) {
     marks.value.find((item) => item.trade_date === tradeDate) || null
   markDialog.tradeDate = tradeDate
   markDialog.existing = existing
-  markDialog.markType = existing ? existing.mark_type : suggestedMarkType()
+  markDialog.markType = existing ? existing.mark_type : 'correct'
+  markDialog.reason = existing?.reason || ''
   markDialog.visible = true
 }
 
@@ -477,6 +605,7 @@ async function saveMark() {
       ts_code: stock.value.ts_code,
       trade_date: markDialog.tradeDate,
       mark_type: markDialog.markType,
+      reason: markDialog.reason.trim(),
     })
     const item = data.item
     const index = marks.value.findIndex(

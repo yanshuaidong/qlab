@@ -29,16 +29,34 @@ const MONEYFLOW_SOURCES = {
   l2: {
     table: 'moneyflow',
     unit: '万元',
-    sql: `SELECT trade_date,
-                 net_mf_amount AS net_amount,
-                 net_mf_vol,
-                 (COALESCE(buy_elg_amount, 0) - COALESCE(sell_elg_amount, 0)) AS buy_elg_amount,
-                 (COALESCE(buy_lg_amount, 0) - COALESCE(sell_lg_amount, 0)) AS buy_lg_amount,
-                 (COALESCE(buy_md_amount, 0) - COALESCE(sell_md_amount, 0)) AS buy_md_amount,
-                 (COALESCE(buy_sm_amount, 0) - COALESCE(sell_sm_amount, 0)) AS buy_sm_amount
-          FROM moneyflow
-          WHERE ts_code = ?
-          ORDER BY trade_date`,
+    sql: `SELECT m.trade_date,
+                 (COALESCE(m.buy_elg_amount, 0) - COALESCE(m.sell_elg_amount, 0)
+                  + COALESCE(m.buy_lg_amount, 0) - COALESCE(m.sell_lg_amount, 0)) AS net_amount,
+                 CASE
+                   WHEN d.amount IS NULL OR d.amount = 0 THEN NULL
+                   ELSE ROUND(
+                     (COALESCE(m.buy_elg_amount, 0) - COALESCE(m.sell_elg_amount, 0)
+                      + COALESCE(m.buy_lg_amount, 0) - COALESCE(m.sell_lg_amount, 0))
+                     * 1000.0 / d.amount,
+                     2
+                   )
+                 END AS net_amount_rate,
+                 m.net_mf_vol,
+                 m.net_mf_amount AS mf_net_amount,
+                 m.net_mf_amount_rate AS mf_net_amount_rate,
+                 (COALESCE(m.buy_elg_amount, 0) - COALESCE(m.sell_elg_amount, 0)) AS buy_elg_amount,
+                 m.buy_elg_amount_rate,
+                 (COALESCE(m.buy_lg_amount, 0) - COALESCE(m.sell_lg_amount, 0)) AS buy_lg_amount,
+                 m.buy_lg_amount_rate,
+                 (COALESCE(m.buy_md_amount, 0) - COALESCE(m.sell_md_amount, 0)) AS buy_md_amount,
+                 m.buy_md_amount_rate,
+                 (COALESCE(m.buy_sm_amount, 0) - COALESCE(m.sell_sm_amount, 0)) AS buy_sm_amount,
+                 m.buy_sm_amount_rate
+          FROM moneyflow AS m
+          LEFT JOIN daily AS d
+            ON d.ts_code = m.ts_code AND d.trade_date = m.trade_date
+          WHERE m.ts_code = ?
+          ORDER BY m.trade_date`,
   },
 }
 
@@ -106,9 +124,9 @@ const STAT_TABLES = [
   ['moneyflow_hsgt', 'trade_date'],
 ]
 
-const MARK_TYPES = new Set(['start', 'end'])
+const MARK_TYPES = new Set(['correct', 'fail'])
 const MARK_SELECT =
-  'SELECT id, ts_code, trade_date, mark_type, created_at FROM trend_mark'
+  'SELECT id, ts_code, trade_date, mark_type, reason, created_at FROM trend_mark'
 
 function likePattern(q) {
   return `%${q.replace(/[%_]/g, '')}%`
@@ -364,22 +382,25 @@ export function createApiRouter(getDb) {
     const tsCode = String(req.body?.ts_code || '').trim()
     const tradeDate = String(req.body?.trade_date || '').trim()
     const markType = String(req.body?.mark_type || '').trim()
+    const reason = String(req.body?.reason || '').trim()
     if (!tsCode || !isTradeDate(tradeDate) || !MARK_TYPES.has(markType)) {
       res.status(400).json({
-        error: '需要 ts_code、trade_date（YYYY-MM-DD）和 mark_type（start/end）',
+        error:
+          '需要 ts_code、trade_date（YYYY-MM-DD）和 mark_type（correct/fail）',
       })
       return
     }
 
     req.db
       .prepare(
-        `INSERT INTO trend_mark (ts_code, trade_date, mark_type)
-         VALUES (?, ?, ?)
+        `INSERT INTO trend_mark (ts_code, trade_date, mark_type, reason)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT(ts_code, trade_date) DO UPDATE SET
            mark_type = excluded.mark_type,
+           reason = excluded.reason,
            created_at = datetime('now', 'localtime')`,
       )
-      .run(tsCode, tradeDate, markType)
+      .run(tsCode, tradeDate, markType, reason)
 
     const item = req.db
       .prepare(`${MARK_SELECT} WHERE ts_code = ? AND trade_date = ?`)

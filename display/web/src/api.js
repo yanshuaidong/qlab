@@ -70,6 +70,32 @@ export function formatPercent(value) {
   return `${Number(value).toFixed(2)}%`
 }
 
+export function formatPrice(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return Number(value).toFixed(2)
+}
+
+export function formatSigned(value, digits = 2) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  const n = Number(value)
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${n.toFixed(digits)}`
+}
+
+export function formatSignedPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${formatSigned(value, 2)}%`
+}
+
+export function formatVolume(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  const n = Number(value)
+  const abs = Math.abs(n)
+  if (abs >= 1e8) return `${(n / 1e8).toFixed(2)} 亿手`
+  if (abs >= 1e4) return `${(n / 1e4).toFixed(2)} 万手`
+  return `${formatNumber(n, 0)} 手`
+}
+
 export function formatMarketCapYi(totalMvWan) {
   const yi = Number(totalMvWan) / 10000
   if (!Number.isFinite(yi) || yi <= 0) return ''
@@ -85,6 +111,13 @@ export function formatAmount(value, unit) {
     if (abs >= 1e8) return `${(n / 1e8).toFixed(2)} 亿`
     if (abs >= 1e4) return `${(n / 1e4).toFixed(2)} 万`
     return `${formatNumber(n, 0)} 元`
+  }
+  if (unit === '千元') {
+    const yuan = n * 1000
+    const absYuan = Math.abs(yuan)
+    if (absYuan >= 1e8) return `${(yuan / 1e8).toFixed(2)} 亿`
+    if (absYuan >= 1e4) return `${(yuan / 1e4).toFixed(2)} 万`
+    return `${formatNumber(yuan, 0)} 元`
   }
   if (unit === '万元') {
     if (abs >= 1e4) return `${(n / 1e4).toFixed(2)} 亿`

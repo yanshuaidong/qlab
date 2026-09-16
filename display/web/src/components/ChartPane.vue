@@ -27,7 +27,7 @@ const props = defineProps({
   fitToken: { default: null },
 })
 
-const emit = defineEmits(['click'])
+const emit = defineEmits(['click', 'hover'])
 
 const el = ref(null)
 let chart = null
@@ -52,6 +52,10 @@ const chartOptions = {
   timeScale: {
     borderColor: '#2a3344',
     timeVisible: false,
+  },
+  localization: {
+    locale: 'zh-CN',
+    dateFormat: 'yyyy-MM-dd',
   },
   crosshair: {
     mode: CrosshairMode.Normal,
@@ -142,9 +146,21 @@ function handleClick(param) {
   })
 }
 
+function handleCrosshairMove(param) {
+  if (param.time == null) {
+    emit('hover', null)
+    return
+  }
+  emit('hover', {
+    time: param.time,
+    paneIndex: resolvePaneIndex(param),
+  })
+}
+
 onMounted(() => {
   chart = createChart(el.value, chartOptions)
   chart.subscribeClick(handleClick)
+  chart.subscribeCrosshairMove(handleCrosshairMove)
   applySeries()
 })
 
@@ -156,6 +172,7 @@ watch(
 
 onBeforeUnmount(() => {
   chart?.unsubscribeClick(handleClick)
+  chart?.unsubscribeCrosshairMove(handleCrosshairMove)
   chart?.remove()
   chart = null
   seriesMap.clear()

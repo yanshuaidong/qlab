@@ -88,7 +88,13 @@
 | `buy_elg_vol` / `buy_elg_amount` | INTEGER / REAL | 特大单买入量（手）/ 金额（万元） |
 | `sell_elg_vol` / `sell_elg_amount` | INTEGER / REAL | 特大单卖出量（手）/ 金额（万元） |
 | `net_mf_vol` / `net_mf_amount` | INTEGER / REAL | 净流入量（手）/ 净流入额（万元） |
+| `net_mf_amount_rate` | REAL | 净流入额占当日成交额（%），本地计算 |
+| `buy_elg_amount_rate` / `buy_lg_amount_rate` / `buy_md_amount_rate` / `buy_sm_amount_rate` | REAL | 特大/大/中/小单净流入占比（%），本地计算：`(买-卖)×1000/daily.amount` |
 | `updated_at` | TEXT | 本地写入时间 |
+
+占比与东财同一分母：`daily.amount` 为千元、资金流为万元，故 `占比 = 净额 × 1000 / daily.amount`。官方 `net_mf_amount` 不把各档简单相加；各档净额仍用买减卖。成交额为空或 0 则占比为空。采集 `moneyflow` 当日写入后会按日回填；全量重算：`python collect/moneyflow_rates.py`。
+
+主力净流入 = 特大单净额 + 大单净额，主力占比 = `(buy_elg − sell_elg + buy_lg − sell_lg) × 1000 / daily.amount`。`net_mf_amount_rate` 是 L2 主动买卖总净额占比，不是主力占比；一字涨跌停时会接近 ±100%。K 线页 L2「主力净流入占比」用主力口径；主动买卖总净额另列。
 
 索引：`idx_moneyflow_trade_date`、`idx_moneyflow_ts_code`。
 

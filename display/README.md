@@ -1,6 +1,6 @@
 # display 股票数据展示
 
-Express + Vue3，展示 `storage/stock/data.sqlite`。趋势标记写入同库 `trend_mark` 表。后端使用 Node 内置 `node:sqlite`，需要 Node 22+（推荐 24）。
+Express + Vue3，展示 `storage/stock/data.sqlite`。K 线正确点 / 失败点标记写入同库 `trend_mark` 表，可附原因。后端使用 Node 内置 `node:sqlite`，需要 Node 22+（推荐 24）。
 
 ## 启动
 

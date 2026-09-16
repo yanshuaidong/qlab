@@ -14,7 +14,12 @@ from pathlib import Path
 import pandas as pd
 import tushare as ts
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+_COLLECT_DIR = Path(__file__).resolve().parent
+if str(_COLLECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_COLLECT_DIR))
+from moneyflow_rates import ensure_rate_columns, refresh_moneyflow_rates
+
+REPO_ROOT = _COLLECT_DIR.parent
 ENV_PATH = REPO_ROOT / ".env"
 DB_PATH = REPO_ROOT / "storage" / "stock" / "tushare_moneyflow" / "data.sqlite"
 
@@ -289,6 +294,7 @@ def init_db(path: Path) -> sqlite3.Connection:
         for index_name, index_cols in spec["indexes"]:
             cols = ", ".join(index_cols)
             conn.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({cols})")
+    ensure_rate_columns(conn)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS import_log (
@@ -467,6 +473,10 @@ def fetch_daily(
                         df["content_type"] = df["content_type"].fillna(content_type)
                 saved = upsert_dataframe(conn, api_name, df)
                 conn.commit()
+                if api_name == "moneyflow" and saved:
+                    ymd = to_ymd(trade_date) or str(trade_date)
+                    refresh_moneyflow_rates(conn, start_date=ymd, end_date=ymd)
+                    conn.commit()
                 rows += saved
                 log(f"  {api_name} {label}: {saved} 行")
             except Exception as exc:  # noqa: BLE001
