@@ -38,7 +38,7 @@ let lastFitToken = Symbol('unfitted')
 const chartOptions = {
   autoSize: true,
   layout: {
-    background: { type: ColorType.Solid, color: '#161b26' },
+    background: { type: ColorType.Solid, color: 'rgb(18, 18, 18)' },
     textColor: '#9aa4b2',
     fontFamily: 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif',
   },

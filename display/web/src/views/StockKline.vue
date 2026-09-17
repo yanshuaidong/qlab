@@ -49,8 +49,22 @@
             <span>额 {{ hoverStats.amount }}</span>
           </div>
           <div class="pane-metric kline-stock-tools">
+            <el-select
+              v-model="stockScope"
+              class="kline-scope-select"
+              size="small"
+              :teleported="true"
+              @change="onStockScopeChange"
+            >
+              <el-option
+                v-for="item in STOCK_SCOPES"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
             <label class="kline-mv-filter">
-              <span>大于</span>
+              <span>大于等于</span>
               <el-input
                 v-model="minMvYi"
                 class="kline-mv-input"
@@ -58,7 +72,21 @@
                 type="number"
                 min="0"
                 step="any"
-                @change="onMinMvChange"
+                @change="onMvRangeChange"
+              />
+              <span>亿</span>
+            </label>
+            <label class="kline-mv-filter">
+              <span>小于等于</span>
+              <el-input
+                v-model="maxMvYi"
+                class="kline-mv-input"
+                size="small"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="不限"
+                @change="onMvRangeChange"
               />
               <span>亿</span>
             </label>
@@ -123,9 +151,9 @@
       align-center
     >
       <p class="mark-date">交易日：{{ markDialog.tradeDate }}</p>
-      <el-radio-group v-model="markDialog.markType">
-        <el-radio value="correct">正确点</el-radio>
-        <el-radio value="fail">失败点</el-radio>
+      <el-radio-group v-model="markDialog.markType" class="mark-type-group">
+        <el-radio value="correct" class="mark-type-correct">正确点</el-radio>
+        <el-radio value="fail" class="mark-type-fail">失败点</el-radio>
       </el-radio-group>
       <el-input
         v-model="markDialog.reason"
@@ -179,6 +207,19 @@ import {
 } from '../api.js'
 
 const DEFAULT_MIN_MV_YI = 1
+const DEFAULT_MAX_MV_YI = ''
+const MARK_COLOR_CORRECT = '#ffd54f'
+const MARK_COLOR_FAIL = '#ff3dce'
+const METRICS_STORAGE_KEY = 'qlab.kline.metrics'
+const DEFAULT_METRICS = {
+  dc: 'net_amount',
+  ths: 'net_amount',
+  l2: 'net_amount',
+}
+const STOCK_SCOPES = [
+  { value: 'all', label: '全部' },
+  { value: 'signal', label: '有信号' },
+]
 
 const DC_FIELDS = [
   { id: 'net_amount', label: '主力净流入额(万元)', kind: 'amount' },
@@ -225,20 +266,46 @@ const overlayGridStyle = {
 }
 
 const selectedCode = ref('')
+const stockScope = ref('all')
 const minMvYi = ref(DEFAULT_MIN_MV_YI)
+const maxMvYi = ref(DEFAULT_MAX_MV_YI)
 const stockOptions = ref([])
 const stock = ref(null)
 let defaultStock = null
 let appliedMinMvYi = DEFAULT_MIN_MV_YI
+let appliedMaxMvYi = null
 const dailyRows = ref([])
 const dcRows = ref([])
 const thsRows = ref([])
 const l2Rows = ref([])
-const metrics = reactive({
-  dc: 'net_amount',
-  ths: 'net_amount',
-  l2: 'net_amount',
-})
+
+function loadStoredMetrics() {
+  const next = { ...DEFAULT_METRICS }
+  try {
+    const raw = localStorage.getItem(METRICS_STORAGE_KEY)
+    if (!raw) return next
+    const saved = JSON.parse(raw)
+    if (!saved || typeof saved !== 'object') return next
+    const panes = { dc: DC_FIELDS, ths: THS_FIELDS, l2: L2_FIELDS }
+    for (const id of Object.keys(DEFAULT_METRICS)) {
+      if (panes[id].some((field) => field.id === saved[id])) next[id] = saved[id]
+    }
+  } catch {
+    return next
+  }
+  return next
+}
+
+const metrics = reactive(loadStoredMetrics())
+
+watch(
+  metrics,
+  (value) => {
+    localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(value))
+  },
+  { deep: true },
+)
+
 const error = ref('')
 const loading = ref(false)
 const hoverDate = ref('')
@@ -303,9 +370,9 @@ function candleMarkers() {
       time: item.trade_date,
       position: isCorrect ? 'belowBar' : 'aboveBar',
       shape: isCorrect ? 'arrowUp' : 'arrowDown',
-      color: isCorrect ? '#26a69a' : '#ef5350',
+      color: isCorrect ? MARK_COLOR_CORRECT : MARK_COLOR_FAIL,
       text: isCorrect ? '正' : '败',
-      size: 1.25,
+      size: 1.4,
     }
   })
 }
@@ -429,7 +496,7 @@ const chartSeries = computed(() => {
   const volumes = dailyRows.value.map((row) => ({
     time: row.trade_date,
     value: row.vol ?? 0,
-    color: (row.close ?? 0) >= (row.open ?? 0) ? '#ef535080' : '#26a69a80',
+    color: (row.close ?? 0) >= (row.open ?? 0) ? 'rgba(253, 68, 50, 0.5)' : 'rgba(47, 163, 49, 0.5)',
   }))
 
   return [
@@ -439,11 +506,11 @@ const chartSeries = computed(() => {
       paneIndex: 0,
       data: candles,
       options: {
-        upColor: '#ef5350',
-        downColor: '#26a69a',
+        upColor: 'rgb(253, 68, 50)',
+        downColor: 'rgb(47, 163, 49)',
         borderVisible: false,
-        wickUpColor: '#ef5350',
-        wickDownColor: '#26a69a',
+        wickUpColor: 'rgb(253, 68, 50)',
+        wickDownColor: 'rgb(47, 163, 49)',
       },
       markers: candleMarkers(),
     },
@@ -517,11 +584,32 @@ function normalizeMinMvYi(value) {
   return n
 }
 
+function normalizeMaxMvYi(value) {
+  if (value === '' || value == null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return null
+  return n
+}
+
+function listEmptyError(min, max, scope) {
+  const range =
+    max == null ? `市值大于等于 ${min} 亿` : `市值介于 ${min}～${max} 亿`
+  if (scope === 'signal') return `没有${range}的有信号股票`
+  return `没有${range}的股票`
+}
+
 async function loadStockList(preferredCode) {
   const min = normalizeMinMvYi(minMvYi.value)
+  const max = normalizeMaxMvYi(maxMvYi.value)
   minMvYi.value = min
+  maxMvYi.value = max == null ? '' : max
   appliedMinMvYi = min
-  const list = await getJson(`/api/stocks?minMvYi=${encodeURIComponent(min)}`)
+  appliedMaxMvYi = max
+  const scope = stockScope.value
+  const params = new URLSearchParams({ minMvYi: String(min) })
+  if (max != null) params.set('maxMvYi', String(max))
+  if (scope === 'signal') params.set('scope', 'signal')
+  const list = await getJson(`/api/stocks?${params}`)
   stockOptions.value = (list.items || []).map(toStockOption)
   if (!stockOptions.value.length) {
     selectedCode.value = ''
@@ -531,7 +619,7 @@ async function loadStockList(preferredCode) {
     thsRows.value = []
     l2Rows.value = []
     marks.value = []
-    error.value = `没有市值大于 ${min} 亿的股票`
+    error.value = listEmptyError(min, max, scope)
     return
   }
 
@@ -548,18 +636,26 @@ async function loadStockList(preferredCode) {
   }
 }
 
-const onMinMvChange = debounce(() => {
+const onMvRangeChange = debounce(() => {
   const min = normalizeMinMvYi(minMvYi.value)
+  const max = normalizeMaxMvYi(maxMvYi.value)
   minMvYi.value = min
-  if (min === appliedMinMvYi) return
+  maxMvYi.value = max == null ? '' : max
+  if (min === appliedMinMvYi && max === appliedMaxMvYi) return
   loadStockList().catch((err) => {
     error.value = err.message
   })
 }, 400)
 
-watch(minMvYi, () => {
-  onMinMvChange()
+watch([minMvYi, maxMvYi], () => {
+  onMvRangeChange()
 })
+
+function onStockScopeChange() {
+  loadStockList().catch((err) => {
+    error.value = err.message
+  })
+}
 
 function onStockChange(code) {
   if (!code) return
@@ -631,6 +727,9 @@ async function removeMark() {
     marks.value = marks.value.filter((item) => item.id !== existing.id)
     markDialog.visible = false
     ElMessage.success(`已删除 ${existing.trade_date} 的标记`)
+    if (stockScope.value === 'signal' && marks.value.length === 0) {
+      await loadStockList()
+    }
   } catch (err) {
     ElMessage.error(err.message)
   } finally {

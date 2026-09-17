@@ -1,15 +1,17 @@
 :root {
-  --bg: #0b0e14;
-  --bg-sidebar: #12161f;
-  --bg-panel: #161b26;
+  --bg: rgb(18, 18, 18);
+  --bg-sidebar: rgb(18, 18, 18);
+  --bg-panel: rgb(18, 18, 18);
   --bg-hover: #1c2433;
   --border: #243044;
   --text: #d8dee9;
   --text-dim: #8b95a8;
   --accent: #5b9fd6;
-  --up: #ef5350;
-  --down: #26a69a;
+  --up: rgb(253, 68, 50);
+  --down: rgb(47, 163, 49);
   --danger: #e06c75;
+  --mark-correct: #ffd54f;
+  --mark-fail: #ff3dce;
 }
 
 html.dark {
@@ -25,7 +27,7 @@ html.dark {
   --el-border-color: var(--border);
   --el-border-color-light: var(--border);
   --el-border-color-lighter: var(--border);
-  --el-mask-color: rgba(11, 14, 20, 0.72);
+  --el-mask-color: rgba(18, 18, 18, 0.72);
 }
 
 * {
@@ -176,7 +178,7 @@ a {
   z-index: 1;
   font-size: 12px;
   color: var(--text);
-  background: rgba(22, 27, 38, 0.82);
+  background: rgba(18, 18, 18, 0.82);
   padding: 2px 6px;
   border-radius: 4px;
   pointer-events: none;
@@ -220,7 +222,7 @@ a {
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-dim);
-  background: rgba(22, 27, 38, 0.82);
+  background: rgba(18, 18, 18, 0.82);
   padding: 2px 8px;
   border-radius: 4px;
   pointer-events: none;
@@ -253,7 +255,7 @@ a {
   padding: 0 8px;
   font-size: 12px;
   color: var(--text);
-  background: rgba(18, 22, 31, 0.94);
+  background: rgba(18, 18, 18, 0.94);
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
@@ -272,6 +274,39 @@ a {
 .mark-date {
   margin: 0 0 14px;
   font-size: 14px;
+}
+
+.mark-type-group {
+  display: flex;
+  gap: 16px;
+}
+
+.mark-type-correct .el-radio__label {
+  color: var(--mark-correct);
+}
+
+.mark-type-fail .el-radio__label {
+  color: var(--mark-fail);
+}
+
+.mark-type-correct .el-radio__inner {
+  border-color: var(--mark-correct);
+}
+
+.mark-type-fail .el-radio__inner {
+  border-color: var(--mark-fail);
+}
+
+.mark-type-correct.is-checked .el-radio__inner,
+.mark-type-correct.is-checked .el-radio__inner::after {
+  background: var(--mark-correct);
+  border-color: var(--mark-correct);
+}
+
+.mark-type-fail.is-checked .el-radio__inner,
+.mark-type-fail.is-checked .el-radio__inner::after {
+  background: var(--mark-fail);
+  border-color: var(--mark-fail);
 }
 
 .mark-reason {
@@ -295,12 +330,12 @@ a {
 .overlay-sub .pane-metric .el-select-v2__wrapper {
   min-height: 24px;
   font-size: 12px;
-  background: rgba(18, 22, 31, 0.94);
+  background: rgba(18, 18, 18, 0.94);
   box-shadow: none;
 }
 
 .overlay-main.overlay-sub .pane-metric {
-  width: min(420px, 70%);
+  width: min(650px, 86%);
 }
 
 .kline-stock-tools {
@@ -308,6 +343,11 @@ a {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.kline-scope-select {
+  flex: 0 0 auto;
+  width: 92px;
 }
 
 .kline-mv-filter {
@@ -319,13 +359,13 @@ a {
   padding: 0 6px;
   font-size: 12px;
   color: var(--text-dim);
-  background: rgba(18, 22, 31, 0.94);
+  background: rgba(18, 18, 18, 0.94);
   border: 1px solid var(--border);
   border-radius: 4px;
 }
 
 .kline-mv-input {
-  width: 72px;
+  width: 56px;
 }
 
 .kline-mv-input .el-input__wrapper {

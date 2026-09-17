@@ -49,7 +49,7 @@ export function toChartTime(dateStr) {
 
 export function flowColor(value) {
   if (value == null || Number.isNaN(value)) return '#5b6b82'
-  return value >= 0 ? '#ef5350' : '#26a69a'
+  return value >= 0 ? 'rgb(253, 68, 50)' : 'rgb(47, 163, 49)'
 }
 
 export function pctClass(value) {

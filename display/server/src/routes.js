@@ -136,6 +136,13 @@ function isTradeDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+function parseMvYi(value) {
+  if (value === '' || value == null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return null
+  return n
+}
+
 function hasTable(db, name) {
   return Boolean(
     db
@@ -201,41 +208,59 @@ export function createApiRouter(getDb) {
 
   router.get('/stocks', (req, res) => {
     const q = String(req.query.q || '').trim()
-    const minMvYi = Number(req.query.minMvYi)
-    const useMinMv =
-      hasTable(req.db, 'daily_basic') &&
-      Number.isFinite(minMvYi) &&
-      minMvYi >= 0
+    const minMvYi = parseMvYi(req.query.minMvYi)
+    const maxMvYi = parseMvYi(req.query.maxMvYi)
+    const scope = String(req.query.scope || '').trim().toLowerCase()
+    const hasDailyBasic = hasTable(req.db, 'daily_basic')
+    const hasTrendMark = hasTable(req.db, 'trend_mark')
+    const useMinMv = hasDailyBasic && minMvYi != null
+    const useMaxMv = hasDailyBasic && maxMvYi != null
+    const useSignal = scope === 'signal'
+    if (useSignal && !hasTrendMark) {
+      res.json({ items: [] })
+      return
+    }
     // daily_basic.total_mv 单位为万元，1 亿 = 10000 万元
     const minMvWan = useMinMv ? minMvYi * 10000 : null
+    const maxMvWan = useMaxMv ? maxMvYi * 10000 : null
     const like = q ? likePattern(q) : null
     const searchSql = q ? 'AND (m.ts_code LIKE ? OR m.name LIKE ?)' : ''
     const limitSql = q ? 'LIMIT 50' : ''
-
-    let items
-    if (useMinMv) {
-      const sql = `SELECT m.ts_code, m.name
-         FROM moneyflow_dc m
-         INNER JOIN daily_basic b
+    const mvJoin =
+      useMinMv || useMaxMv
+        ? `INNER JOIN daily_basic b
            ON b.ts_code = m.ts_code
-          AND b.trade_date = (SELECT MAX(trade_date) FROM daily_basic)
-         WHERE m.trade_date = (SELECT MAX(trade_date) FROM moneyflow_dc)
-           AND b.total_mv > ?
-           ${searchSql}
-         ORDER BY m.ts_code
-         ${limitSql}`
-      const stmt = req.db.prepare(sql)
-      items = q ? stmt.all(minMvWan, like, like) : stmt.all(minMvWan)
-    } else {
-      const sql = `SELECT m.ts_code, m.name
-         FROM moneyflow_dc m
-         WHERE m.trade_date = (SELECT MAX(trade_date) FROM moneyflow_dc)
-           ${searchSql}
-         ORDER BY m.ts_code
-         ${limitSql}`
-      const stmt = req.db.prepare(sql)
-      items = q ? stmt.all(like, like) : stmt.all()
-    }
+          AND b.trade_date = (SELECT MAX(trade_date) FROM daily_basic)`
+        : ''
+    const mvSql = [
+      useMinMv ? 'AND b.total_mv >= ?' : '',
+      useMaxMv ? 'AND b.total_mv <= ?' : '',
+    ]
+      .filter(Boolean)
+      .join('\n           ')
+    const signalSql = useSignal
+      ? `AND EXISTS (
+           SELECT 1 FROM trend_mark t
+           WHERE t.ts_code = m.ts_code
+             AND t.mark_type IN ('correct', 'fail')
+         )`
+      : ''
+
+    const sql = `SELECT m.ts_code, m.name
+       FROM moneyflow_dc m
+       ${mvJoin}
+       WHERE m.trade_date = (SELECT MAX(trade_date) FROM moneyflow_dc)
+         ${mvSql}
+         ${signalSql}
+         ${searchSql}
+       ORDER BY m.ts_code
+       ${limitSql}`
+    const stmt = req.db.prepare(sql)
+    const params = []
+    if (useMinMv) params.push(minMvWan)
+    if (useMaxMv) params.push(maxMvWan)
+    if (q) params.push(like, like)
+    const items = params.length ? stmt.all(...params) : stmt.all()
     res.json({ items })
   })
 
