@@ -425,6 +425,36 @@ export function createApiRouter(getDb) {
     res.json({ tsCode, items })
   })
 
+  router.post('/marks/fail-correct', (req, res) => {
+    const tsCode = String(req.body?.ts_code || '').trim()
+    if (!tsCode) {
+      res.status(400).json({ error: '需要 ts_code' })
+      return
+    }
+
+    const result = req.db
+      .prepare(
+        `UPDATE trend_mark
+         SET mark_type = 'fail',
+             created_at = datetime('now', 'localtime')
+         WHERE ts_code = ? AND mark_type = 'correct'`,
+      )
+      .run(tsCode)
+
+    const items = req.db
+      .prepare(
+        `${MARK_SELECT}
+         WHERE ts_code = ?
+         ORDER BY trade_date, id`,
+      )
+      .all(tsCode)
+    res.json({
+      tsCode,
+      updated: Number(result.changes || 0),
+      items,
+    })
+  })
+
   router.post('/marks', (req, res) => {
     const tsCode = String(req.body?.ts_code || '').trim()
     const tradeDate = String(req.body?.trade_date || '').trim()

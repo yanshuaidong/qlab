@@ -290,6 +290,83 @@ a {
   cursor: not-allowed;
 }
 
+.fail-all-fab {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  width: 148px;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--mark-fail);
+  border-radius: 8px;
+  background: rgba(18, 18, 18, 0.94);
+  user-select: none;
+  touch-action: none;
+}
+
+.fail-all-fab.is-disabled .fail-all-fab__action {
+  color: #8a5a7a;
+}
+
+.fail-all-fab__action {
+  flex: 7 1 0;
+  width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--mark-fail);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fail-all-fab__action:hover:not(:disabled) {
+  background: rgba(255, 61, 206, 0.12);
+  color: #ff7ee0;
+}
+
+.fail-all-fab__action:disabled {
+  cursor: not-allowed;
+}
+
+.fail-all-fab__handle {
+  flex: 3 1 0;
+  width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  background: rgba(255, 61, 206, 0.16);
+  border-left: 1px solid rgba(255, 61, 206, 0.45);
+}
+
+.fail-all-fab__handle:hover {
+  background: rgba(255, 61, 206, 0.28);
+}
+
+.fail-all-fab.is-dragging .fail-all-fab__handle,
+.fail-all-fab__handle:active {
+  cursor: grabbing;
+}
+
+.fail-all-fab__grip {
+  width: 12px;
+  height: 18px;
+  background-image: radial-gradient(
+    circle closest-side,
+    var(--mark-fail) 1.35px,
+    transparent 1.4px
+  );
+  background-size: 6px 6px;
+  background-repeat: repeat;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
 .mark-date {
   margin: 0 0 14px;
   font-size: 14px;

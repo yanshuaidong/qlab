@@ -178,6 +178,30 @@
         </div>
       </div>
     </div>
+    <div
+      class="fail-all-fab"
+      :class="{ 'is-dragging': fabDragging, 'is-disabled': !canFailAll }"
+      :style="fabStyle"
+    >
+      <button
+        type="button"
+        class="fail-all-fab__action"
+        :disabled="!canFailAll"
+        @click="failAllCorrect"
+      >
+        {{ failAllLabel }}
+      </button>
+      <div
+        class="fail-all-fab__handle"
+        title="拖动"
+        @pointerdown="onFabHandlePointerDown"
+        @pointermove="onFabHandlePointerMove"
+        @pointerup="onFabHandlePointerUp"
+        @pointercancel="onFabHandlePointerUp"
+      >
+        <span class="fail-all-fab__grip" aria-hidden="true" />
+      </div>
+    </div>
     <el-dialog
       v-model="markDialog.visible"
       title="标记"
@@ -246,6 +270,10 @@ const DEFAULT_MAX_MV_YI = ''
 const MARK_COLOR_CORRECT = '#ffd54f'
 const MARK_COLOR_FAIL = '#ff3dce'
 const METRICS_STORAGE_KEY = 'qlab.kline.metrics'
+const FAB_POS_KEY = 'qlab.kline.failAllFab'
+const FAB_WIDTH = 148
+const FAB_HEIGHT = 40
+const FAB_MARGIN = 12
 const DEFAULT_METRICS = {
   dc: 'net_amount',
   ths: 'net_amount',
@@ -367,6 +395,9 @@ const error = ref('')
 const loading = ref(false)
 const hoverDate = ref('')
 const marks = ref([])
+const failAllSaving = ref(false)
+const fabDragging = ref(false)
+const fabPos = reactive(loadFabPos())
 const markDialog = reactive({
   visible: false,
   tradeDate: '',
@@ -413,6 +444,120 @@ const fitToken = computed(() => {
 
 function markTypeLabel(type) {
   return type === 'fail' ? '失败点' : '正确点'
+}
+
+const correctMarkCount = computed(
+  () => marks.value.filter((item) => item.mark_type === 'correct').length,
+)
+
+const canFailAll = computed(
+  () =>
+    Boolean(stock.value) &&
+    !loading.value &&
+    !failAllSaving.value &&
+    correctMarkCount.value > 0,
+)
+
+const failAllLabel = computed(() => {
+  if (failAllSaving.value) return '处理中…'
+  if (correctMarkCount.value > 0) return `全部失败 ${correctMarkCount.value}`
+  return '全部失败'
+})
+
+const fabStyle = computed(() => ({
+  left: `${fabPos.x}px`,
+  top: `${fabPos.y}px`,
+}))
+
+function defaultFabPos() {
+  if (typeof window === 'undefined') return { x: FAB_MARGIN, y: FAB_MARGIN }
+  return clampFabPos(
+    window.innerWidth - FAB_WIDTH - 24,
+    window.innerHeight - FAB_HEIGHT - 24,
+  )
+}
+
+function clampFabPos(x, y) {
+  if (typeof window === 'undefined') return { x: FAB_MARGIN, y: FAB_MARGIN }
+  const maxX = Math.max(FAB_MARGIN, window.innerWidth - FAB_WIDTH - FAB_MARGIN)
+  const maxY = Math.max(FAB_MARGIN, window.innerHeight - FAB_HEIGHT - FAB_MARGIN)
+  return {
+    x: Math.min(maxX, Math.max(FAB_MARGIN, x)),
+    y: Math.min(maxY, Math.max(FAB_MARGIN, y)),
+  }
+}
+
+function loadFabPos() {
+  try {
+    const raw = localStorage.getItem(FAB_POS_KEY)
+    if (!raw) return defaultFabPos()
+    const saved = JSON.parse(raw)
+    if (!Number.isFinite(saved?.x) || !Number.isFinite(saved?.y)) {
+      return defaultFabPos()
+    }
+    return clampFabPos(saved.x, saved.y)
+  } catch {
+    return defaultFabPos()
+  }
+}
+
+function saveFabPos() {
+  localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: fabPos.x, y: fabPos.y }))
+}
+
+function onFabResize() {
+  const next = clampFabPos(fabPos.x, fabPos.y)
+  fabPos.x = next.x
+  fabPos.y = next.y
+}
+
+let dragOffsetX = 0
+let dragOffsetY = 0
+
+function onFabHandlePointerDown(event) {
+  if (event.button != null && event.button !== 0) return
+  event.preventDefault()
+  fabDragging.value = true
+  dragOffsetX = event.clientX - fabPos.x
+  dragOffsetY = event.clientY - fabPos.y
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+
+function onFabHandlePointerMove(event) {
+  if (!fabDragging.value) return
+  const next = clampFabPos(event.clientX - dragOffsetX, event.clientY - dragOffsetY)
+  fabPos.x = next.x
+  fabPos.y = next.y
+}
+
+function onFabHandlePointerUp(event) {
+  if (!fabDragging.value) return
+  fabDragging.value = false
+  try {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  } catch {
+    /* already released */
+  }
+  saveFabPos()
+}
+
+async function failAllCorrect() {
+  if (!canFailAll.value || !stock.value) return
+  failAllSaving.value = true
+  try {
+    const data = await sendJson('/api/marks/fail-correct', 'POST', {
+      ts_code: stock.value.ts_code,
+    })
+    marks.value = data.items || []
+    markDialog.visible = false
+    const n = Number(data.updated || 0)
+    if (n > 0) ElMessage.success(`已将 ${n} 个正确点改为失败点`)
+    else ElMessage.info('当前没有正确点')
+  } catch (err) {
+    ElMessage.error(err.message)
+  } finally {
+    failAllSaving.value = false
+  }
 }
 
 const markReasonPlaceholder = computed(() =>
@@ -899,9 +1044,12 @@ async function removeMark() {
 
 onBeforeUnmount(() => {
   unsubTimeScale?.()
+  window.removeEventListener('resize', onFabResize)
 })
 
 onMounted(async () => {
+  Object.assign(fabPos, loadFabPos())
+  window.addEventListener('resize', onFabResize)
   try {
     const meta = await getJson('/api/meta')
     defaultStock = meta.defaultStock || null
