@@ -391,6 +391,28 @@ export function createApiRouter(getDb) {
     })
   })
 
+  const PHASE_TABLES = {
+    adx: 'phase_adx',
+    lr: 'phase_lr',
+    hmm: 'phase_hmm',
+  }
+
+  router.get('/phases/:tsCode', (req, res) => {
+    const tsCode = String(req.params.tsCode || '').trim()
+    const payload = { tsCode, adx: [], lr: [], hmm: [] }
+    for (const [key, table] of Object.entries(PHASE_TABLES)) {
+      if (!hasTable(req.db, table)) continue
+      payload[key] = req.db
+        .prepare(
+          `SELECT trade_date, phase FROM ${table}
+           WHERE ts_code = ?
+           ORDER BY trade_date`,
+        )
+        .all(tsCode)
+    }
+    res.json(payload)
+  })
+
   router.get('/marks/:tsCode', (req, res) => {
     const tsCode = String(req.params.tsCode || '').trim()
     const items = req.db

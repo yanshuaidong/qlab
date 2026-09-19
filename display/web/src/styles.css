@@ -171,6 +171,19 @@ a {
   min-height: 0;
 }
 
+.phase-band-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.phase-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
 .overlay-sub .pane-title {
   position: absolute;
   top: 4px;
@@ -207,6 +220,12 @@ a {
   color: var(--text-dim);
   font-weight: 400;
   margin-left: 4px;
+}
+
+.overlay-main .kline-legend,
+.overlay-main .kline-stock-tools {
+  position: relative;
+  z-index: 1;
 }
 
 .kline-legend {
@@ -335,7 +354,7 @@ a {
 }
 
 .overlay-main.overlay-sub .pane-metric {
-  width: min(650px, 86%);
+  width: min(780px, 92%);
 }
 
 .kline-stock-tools {
@@ -348,6 +367,58 @@ a {
 .kline-scope-select {
   flex: 0 0 auto;
   width: 92px;
+}
+
+.kline-phase-select {
+  flex: 0 0 auto;
+  width: 108px;
+}
+
+.phase-tag {
+  font-weight: 650;
+}
+
+.phase-tag.is-up {
+  color: var(--up);
+}
+
+.phase-tag.is-down {
+  color: var(--down);
+}
+
+.phase-tag.is-flat {
+  color: var(--text-dim);
+}
+
+.phase-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.phase-swatch::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: 0;
+}
+
+.phase-swatch.is-up::before {
+  background: rgba(253, 68, 50, 0.7);
+}
+
+.phase-swatch.is-down::before {
+  background: rgba(47, 163, 49, 0.7);
+}
+
+.phase-swatch.is-flat::before {
+  background: rgba(139, 149, 168, 0.7);
 }
 
 .kline-mv-filter {

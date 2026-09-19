@@ -27,7 +27,7 @@ const props = defineProps({
   fitToken: { default: null },
 })
 
-const emit = defineEmits(['click', 'hover'])
+const emit = defineEmits(['click', 'hover', 'ready'])
 
 const el = ref(null)
 let chart = null
@@ -162,6 +162,7 @@ onMounted(() => {
   chart.subscribeClick(handleClick)
   chart.subscribeCrosshairMove(handleCrosshairMove)
   applySeries()
+  emit('ready')
 })
 
 watch(

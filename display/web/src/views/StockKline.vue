@@ -2,15 +2,25 @@
   <section class="page kline-page">
     <div class="chart-wrap kline-stage">
       <ChartPane
+        ref="chartPaneRef"
         :series="chartSeries"
         :price-scales="priceScales"
         :pane-stretch="paneStretch"
         :fit-token="fitToken"
+        @ready="onChartReady"
         @click="onChartClick"
         @hover="onChartHover"
       />
       <div class="kline-overlays" :style="overlayGridStyle">
         <div class="overlay-pane overlay-sub overlay-main">
+          <div class="phase-band-layer">
+            <div
+              v-for="(band, index) in overlayBands"
+              :key="index"
+              class="phase-band"
+              :style="band.style"
+            />
+          </div>
           <div class="pane-heading">
             <span class="pane-title" :class="{ 'is-error': !!error }">
               {{ error || stockTitle }}
@@ -32,6 +42,11 @@
             >
               下一个
             </button>
+            <span v-if="phaseMethod" class="phase-legend">
+              <span class="phase-swatch is-down">下跌</span>
+              <span class="phase-swatch is-flat">震荡</span>
+              <span class="phase-swatch is-up">上涨</span>
+            </span>
           </div>
           <div v-if="hoverStats" class="kline-legend">
             <span>{{ hoverStats.date }}</span>
@@ -47,8 +62,28 @@
             <span>振幅 {{ hoverStats.amp }}</span>
             <span>量 {{ hoverStats.vol }}</span>
             <span>额 {{ hoverStats.amount }}</span>
+            <span
+              v-if="hoverStats.phase"
+              class="phase-tag"
+              :class="hoverStats.phaseClass"
+            >
+              {{ hoverStats.phase }}
+            </span>
           </div>
           <div class="pane-metric kline-stock-tools">
+            <el-select
+              v-model="phaseMethod"
+              class="kline-phase-select"
+              size="small"
+              :teleported="true"
+            >
+              <el-option
+                v-for="item in PHASE_METHODS"
+                :key="item.value || 'off'"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
             <el-select
               v-model="stockScope"
               class="kline-scope-select"
@@ -187,7 +222,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import ChartPane from '../components/ChartPane.vue'
 import {
@@ -220,6 +255,23 @@ const STOCK_SCOPES = [
   { value: 'all', label: '全部' },
   { value: 'signal', label: '有信号' },
 ]
+const PHASE_METHODS = [
+  { value: '', label: '阶段关闭' },
+  { value: 'adx', label: 'ADX' },
+  { value: 'lr', label: '线性回归' },
+  { value: 'hmm', label: 'HMM' },
+]
+const PHASE_LABELS = { 0: '下跌', 1: '震荡', 2: '上涨' }
+const PHASE_COLORS = {
+  0: 'rgba(47, 163, 49, 0.28)',
+  1: 'rgba(139, 149, 168, 0.22)',
+  2: 'rgba(253, 68, 50, 0.28)',
+}
+const PHASE_CLASS = {
+  0: 'is-down',
+  1: 'is-flat',
+  2: 'is-up',
+}
 
 const DC_FIELDS = [
   { id: 'net_amount', label: '主力净流入额(万元)', kind: 'amount' },
@@ -265,6 +317,9 @@ const overlayGridStyle = {
   gridTemplateRows: paneStretch.map((n) => `${n}fr`).join(' '),
 }
 
+const chartPaneRef = ref(null)
+const overlayBands = ref([])
+let unsubTimeScale = null
 const selectedCode = ref('')
 const stockScope = ref('all')
 const minMvYi = ref(DEFAULT_MIN_MV_YI)
@@ -278,6 +333,8 @@ const dailyRows = ref([])
 const dcRows = ref([])
 const thsRows = ref([])
 const l2Rows = ref([])
+const phases = reactive({ adx: [], lr: [], hmm: [] })
+const phaseMethod = ref('adx')
 
 function loadStoredMetrics() {
   const next = { ...DEFAULT_METRICS }
@@ -362,6 +419,101 @@ const markReasonPlaceholder = computed(() =>
   markDialog.markType === 'fail' ? '失败的原因（可选）' : '正确的原因（可选）',
 )
 
+function resetPhases() {
+  phases.adx = []
+  phases.lr = []
+  phases.hmm = []
+}
+
+const phaseItems = computed(() => {
+  if (!phaseMethod.value) return []
+  return phases[phaseMethod.value] || []
+})
+
+const phaseByDate = computed(() => indexRows(phaseItems.value))
+
+function mergePhaseBands(items) {
+  if (!items?.length) return []
+  const sorted = [...items].sort((a, b) =>
+    String(a.trade_date).localeCompare(String(b.trade_date)),
+  )
+  const bands = []
+  let from = sorted[0]
+  let to = sorted[0]
+  for (let i = 1; i < sorted.length; i += 1) {
+    const row = sorted[i]
+    if (row.phase === to.phase) {
+      to = row
+      continue
+    }
+    bands.push({
+      from: from.trade_date,
+      to: to.trade_date,
+      color: PHASE_COLORS[from.phase] || PHASE_COLORS[1],
+    })
+    from = row
+    to = row
+  }
+  bands.push({
+    from: from.trade_date,
+    to: to.trade_date,
+    color: PHASE_COLORS[from.phase] || PHASE_COLORS[1],
+  })
+  return bands
+}
+
+function toChartTime(value) {
+  const parts = String(value || '').split('-').map(Number)
+  if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return value
+  return { year: parts[0], month: parts[1], day: parts[2] }
+}
+
+function layoutPhaseBands() {
+  const chart = chartPaneRef.value?.getChart?.()
+  if (!chart || !phaseMethod.value) {
+    overlayBands.value = []
+    return
+  }
+  const timeScale = chart.timeScale()
+  const half = (timeScale.options().barSpacing || 6) / 2
+  const next = []
+  for (const band of mergePhaseBands(phaseItems.value)) {
+    const x1 =
+      timeScale.timeToCoordinate(toChartTime(band.from)) ??
+      timeScale.timeToCoordinate(band.from)
+    const x2 =
+      timeScale.timeToCoordinate(toChartTime(band.to)) ??
+      timeScale.timeToCoordinate(band.to)
+    if (x1 == null || x2 == null) continue
+    const left = Math.min(x1, x2) - half
+    const width = Math.abs(x2 - x1) + half * 2
+    if (width <= 0) continue
+    next.push({
+      style: {
+        left: `${left}px`,
+        width: `${width}px`,
+        background: band.color,
+      },
+    })
+  }
+  overlayBands.value = next
+}
+
+function onChartReady() {
+  unsubTimeScale?.()
+  const chart = chartPaneRef.value?.getChart?.()
+  if (!chart) return
+  const handler = () => layoutPhaseBands()
+  chart.timeScale().subscribeVisibleLogicalRangeChange(handler)
+  unsubTimeScale = () => {
+    chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler)
+    unsubTimeScale = null
+  }
+  layoutPhaseBands()
+}
+
+watch([phaseItems, fitToken, phaseMethod], layoutPhaseBands)
+
 function candleMarkers() {
   return marks.value.map((item) => {
     const isCorrect = item.mark_type !== 'fail'
@@ -425,6 +577,8 @@ const hoverStats = computed(() => {
     vol: formatVolume(row.vol),
     amount: formatAmount(row.amount, '千元'),
     cls: pctClass(change ?? pct),
+    phase: PHASE_LABELS[phaseByDate.value[row.trade_date]?.phase] || '',
+    phaseClass: PHASE_CLASS[phaseByDate.value[row.trade_date]?.phase] || '',
   }
 })
 
@@ -545,13 +699,14 @@ async function loadStock(item) {
   error.value = ''
   const code = encodeURIComponent(item.ts_code)
   try {
-    const [daily, dc, ths, l2, markData, basic] = await Promise.all([
+    const [daily, dc, ths, l2, markData, basic, phaseData] = await Promise.all([
       getJson(`/api/daily/${code}`),
       getJson(`/api/moneyflow/${code}?source=dc`),
       getJson(`/api/moneyflow/${code}?source=ths`),
       getJson(`/api/moneyflow/${code}?source=l2`),
       getJson(`/api/marks/${code}`),
       getJson(`/api/daily-basic/${code}`).catch(() => ({ item: null })),
+      getJson(`/api/phases/${code}`).catch(() => ({ adx: [], lr: [], hmm: [] })),
     ])
     if (seq !== loadSeq) return
     stock.value = { ...item, total_mv: basic.item?.total_mv ?? null }
@@ -560,6 +715,9 @@ async function loadStock(item) {
     thsRows.value = ths.rows || []
     l2Rows.value = l2.rows || []
     marks.value = markData.items || []
+    phases.adx = phaseData.adx || []
+    phases.lr = phaseData.lr || []
+    phases.hmm = phaseData.hmm || []
     if (!dailyRows.value.length) {
       error.value = '该代码没有日线数据'
     }
@@ -571,6 +729,7 @@ async function loadStock(item) {
     thsRows.value = []
     l2Rows.value = []
     marks.value = []
+    resetPhases()
     stock.value = { ...item, total_mv: null }
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -619,6 +778,7 @@ async function loadStockList(preferredCode) {
     thsRows.value = []
     l2Rows.value = []
     marks.value = []
+    resetPhases()
     error.value = listEmptyError(min, max, scope)
     return
   }
@@ -736,6 +896,10 @@ async function removeMark() {
     markDialog.saving = false
   }
 }
+
+onBeforeUnmount(() => {
+  unsubTimeScale?.()
+})
 
 onMounted(async () => {
   try {
