@@ -157,21 +157,21 @@ function windFixture(t) {
   const db = new DatabaseSync(':memory:')
   t.after(() => db.close())
   db.exec(`CREATE TABLE daily (
-    ts_code TEXT, trade_date TEXT, close REAL, pre_close REAL, vol REAL,
+    ts_code TEXT, trade_date TEXT, close REAL, high REAL, pre_close REAL, vol REAL,
     PRIMARY KEY (ts_code, trade_date)
   );
   CREATE TABLE daily_basic (ts_code TEXT, trade_date TEXT, total_mv REAL, PRIMARY KEY (ts_code, trade_date));
-  CREATE TABLE moneyflow_dc (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
-  CREATE TABLE moneyflow_ths (ts_code TEXT, trade_date TEXT, buy_lg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
+  CREATE TABLE moneyflow_dc (ts_code TEXT, trade_date TEXT, name TEXT, buy_elg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
+  CREATE TABLE moneyflow_ths (ts_code TEXT, trade_date TEXT, name TEXT, buy_lg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
   CREATE TABLE moneyflow (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));`)
   return db
 }
 
-function windDay(db, code, { date = '2026-09-17', mv = 4000000, dc = null, ths = null, l2 = null } = {}) {
-  db.prepare('INSERT INTO daily VALUES (?, ?, 10, 10, 100)').run(code, date)
+function windDay(db, code, { date = '2026-09-17', mv = 4000000, name = '普通股票', dc = null, ths = null, l2 = null } = {}) {
+  db.prepare('INSERT INTO daily (ts_code, trade_date, close, high, pre_close, vol) VALUES (?, ?, 10, 10, 10, 100)').run(code, date)
   if (mv != null) db.prepare('INSERT INTO daily_basic VALUES (?, ?, ?)').run(code, date, mv)
-  if (dc != null) db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?)').run(code, date, dc)
-  if (ths != null) db.prepare('INSERT INTO moneyflow_ths VALUES (?, ?, ?)').run(code, date, ths)
+  if (dc != null) db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?, ?)').run(code, date, name, dc)
+  if (ths != null) db.prepare('INSERT INTO moneyflow_ths VALUES (?, ?, ?, ?)').run(code, date, name, ths)
   if (l2 != null) db.prepare('INSERT INTO moneyflow VALUES (?, ?, ?)').run(code, date, l2)
 }
 
@@ -181,7 +181,7 @@ test('主力风向按股票去重，先筛当日总市值再看开启的占比',
   windDay(db, '600002.SH', { dc: 25, l2: 30 })
   windDay(db, '600003.SH', { dc: 19.99 })
   windDay(db, '600004.SH')
-  db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?)').run('600004.SH', '2026-09-17', null)
+  db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?, ?)').run('600004.SH', '2026-09-17', '普通股票', null)
   windDay(db, '600005.SH', { mv: 3999999.99, dc: 80, ths: 80, l2: 80 })
   windDay(db, '600006.SH', { mv: null, dc: 80 })
   windDay(db, '600007.SH', { date: '2026-09-16', dc: 10 })
@@ -194,6 +194,19 @@ test('主力风向按股票去重，先筛当日总市值再看开启的占比',
   ])
   assert.equal(readMainForceWind(db, { endDate: '2026-09-17', ths: false }).rows.at(-1).count, 1)
   assert.equal(readMainForceWind(db, { endDate: '2026-09-17', dc: false, ths: false, l2: false }).rows.at(-1).count, 0)
+})
+
+test('主力风向排除名称含银行或农商的股票', t => {
+  const db = windFixture(t)
+  windDay(db, '600001.SH', { name: '平安银行', dc: 80, ths: 80, l2: 80 })
+  windDay(db, '601077.SH', { name: '渝农商行', dc: 80 })
+  windDay(db, '600002.SH', { name: 'XD沪农商', ths: 80 })
+  windDay(db, '600003.SH', { name: '普通股票', l2: 80 })
+  db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?, ?)').run('600003.SH', '2026-09-17', '工商银行', null)
+  const result = readMainForceWind(db, { endDate: '2026-09-17' })
+  assert.equal(result.rows.at(-1).count, 0)
+  const outcomes = readMainForceOutcomes(db, { date: '2026-09-17' })
+  assert.equal(outcomes.count, 0)
 })
 
 test('主力风向图表按股票只数从零轴向上', () => {
@@ -228,35 +241,43 @@ test('主力风向 API 校验市值、占比和开关', async t => {
   }
 })
 
-test('点击日期按该股后续交易日计算涨幅，去重后汇总胜率并按20日降序', t => {
+test('点击日期按后续交易日最高价计算最大涨幅，去重后汇总胜率并按20日降序', t => {
   const db = new DatabaseSync(':memory:')
   t.after(() => db.close())
-  db.exec(`CREATE TABLE daily (ts_code TEXT, trade_date TEXT, close REAL, pre_close REAL, vol REAL);
+  db.exec(`CREATE TABLE daily (ts_code TEXT, trade_date TEXT, close REAL, high REAL, pre_close REAL, vol REAL);
     CREATE TABLE daily_basic (ts_code TEXT, trade_date TEXT, total_mv REAL);
     CREATE TABLE moneyflow_dc (ts_code TEXT, trade_date TEXT, name TEXT, buy_elg_amount_rate REAL);
     CREATE TABLE moneyflow_ths (ts_code TEXT, trade_date TEXT, name TEXT, buy_lg_amount_rate REAL);
     CREATE TABLE moneyflow (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL);`)
   const signal = '2026-09-01'
-  function add(code, name, closes, { dc = 20, l2 = null } = {}) {
+  function add(code, name, bars, { dc = 20, l2 = null } = {}) {
     db.prepare('INSERT INTO daily_basic VALUES (?, ?, 4000000)').run(code, signal)
     db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?, ?)').run(code, signal, name, dc)
     if (l2 != null) db.prepare('INSERT INTO moneyflow VALUES (?, ?, ?)').run(code, signal, l2)
-    closes.forEach((close, index) => {
+    bars.forEach((bar, index) => {
       const day = index === 0 ? signal : `2026-09-${String(index + 1).padStart(2, '0')}`
-      db.prepare('INSERT INTO daily VALUES (?, ?, ?, 10, 100)').run(code, day, close)
+      db.prepare('INSERT INTO daily VALUES (?, ?, ?, ?, 10, 100)').run(code, day, bar.close, bar.high)
     })
   }
-  add('600001.SH', '领先', [10, ...Array.from({ length: 20 }, (_, i) => 10 + (i + 1) * 0.1)])
-  add('600002.SH', '落后', [10, 9, 9, 8])
-  add('600003.SH', '重复', [10], { dc: 30, l2: 40 })
-  add('600004.SH', '不够', [10], { dc: 10 })
+  add('600001.SH', '领先', [
+    { close: 10, high: 10 },
+    ...Array.from({ length: 20 }, (_, i) => ({ close: 10, high: 10 + (i + 1) * 0.1 })),
+  ])
+  add('600002.SH', '落后', [
+    { close: 10, high: 10 },
+    { close: 9, high: 9 },
+    { close: 9, high: 9.5 },
+    { close: 8, high: 8 },
+  ])
+  add('600003.SH', '重复', [{ close: 10, high: 10 }], { dc: 30, l2: 40 })
+  add('600004.SH', '不够', [{ close: 10, high: 10 }], { dc: 10 })
   const result = readMainForceOutcomes(db, { date: signal, minMvYi: 400 })
   assert.equal(result.count, 3)
   assert.deepEqual(result.stocks.map(stock => stock.tsCode), ['600001.SH', '600002.SH', '600003.SH'])
   assert.equal(result.stocks[0].name, '领先')
   assert.equal(result.stocks[0].returns[3], 3)
   assert.equal(result.stocks[0].returns[20], 20)
-  assert.equal(result.stocks[1].returns[3], -20)
+  assert.equal(result.stocks[1].returns[3], -5)
   assert.equal(result.stocks[1].returns[20], null)
   assert.equal(result.stocks[2].returns[3], null)
   const day3 = result.summary.find(row => row.days === 3)

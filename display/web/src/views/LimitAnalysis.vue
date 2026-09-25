@@ -59,7 +59,7 @@
         <span class="toolbar-label">%</span>
       </label>
     </div>
-    <p class="hint">近一年逐日统计：先保留当天总市值达标的股票，再计入至少命中一个已开启净流入条件的股票。同一只股票当天只计 1 只。</p>
+    <p class="hint">近一年逐日统计：先保留当天总市值达标的股票，再计入至少命中一个已开启净流入条件的股票。同一只股票当天只计 1 只。名称含「银行」或「农商」的股票不计入。</p>
     <el-alert v-if="windError" :title="windError" type="error" :closable="false" show-icon />
     <div v-if="windData && anyFlowOn" class="limit-summary" aria-live="polite">
       <span>{{ windData.startDate }} 至 {{ windData.endDate }} · {{ windData.rows.length }} 个行情日</span>
@@ -69,11 +69,11 @@
       <VChart v-if="anyFlowOn && windData?.rows.length" :option="windChartOption" autoresize @click="selectWindDay" />
       <el-empty v-else-if="!windLoading" :description="windEmptyDescription" />
     </div>
-    <p class="hint methodology">统计口径：总市值取当日 daily_basic.total_mv，默认大于等于 400 亿。东财用超大单净流入占比，同花顺用大单净流入占比，L2 主动用超大单净流入占比，默认都大于等于 20%。开关关闭的条件不参与。占比为空或低于门槛不算命中。横轴只展示有行情的日期。点击柱子查看当日入选股票之后的涨幅。</p>
+    <p class="hint methodology">统计口径：总市值取当日 daily_basic.total_mv，默认大于等于 400 亿。东财用超大单净流入占比，同花顺用大单净流入占比，L2 主动用超大单净流入占比，默认都大于等于 20%。开关关闭的条件不参与。占比为空或低于门槛不算命中。当日东财或同花顺名称含「银行」或「农商」的股票排除。横轴只展示有行情的日期。点击柱子查看当日入选股票之后的涨幅。</p>
 
     <div v-if="selectedDate" ref="outcomeRef" class="outcome-section">
       <h2>{{ selectedDate }} 入选股票后续表现</h2>
-      <p class="hint">以该日收盘为起点，3／5／10／15／20 日是该股之后第 N 个有收盘价的交易日。涨幅＝后续收盘 ÷ 信号日收盘 − 1。后续行情不足的不计入胜率和平均、中位涨幅。胜率为涨幅大于 0 的股票占有效样本的比例。</p>
+      <p class="hint">以该日收盘为起点，N 日最大涨幅＝之后 N 个交易日里的最高价 ÷ 信号日收盘 − 1。后续行情不足 N 日的不计入胜率和平均、中位最大涨幅。胜率为最大涨幅大于 0 的股票占有效样本的比例。</p>
       <el-alert v-if="outcomeError" :title="outcomeError" type="error" :closable="false" show-icon />
       <h3>总结</h3>
       <el-table :data="outcome?.summary || []" v-loading="outcomeLoading" empty-text="当日没有入选股票">
@@ -81,15 +81,15 @@
         <el-table-column prop="sample" label="有效样本" width="100" />
         <el-table-column prop="wins" label="上涨只数" width="100" />
         <el-table-column label="胜率" width="100"><template #default="{ row }">{{ formatPercent(row.winRate) }}</template></el-table-column>
-        <el-table-column label="平均涨幅" width="110"><template #default="{ row }"><span :class="pctClass(row.avg)">{{ formatSigned(row.avg) }}</span></template></el-table-column>
-        <el-table-column label="中位涨幅" width="110"><template #default="{ row }"><span :class="pctClass(row.median)">{{ formatSigned(row.median) }}</span></template></el-table-column>
+        <el-table-column label="平均最大涨幅" width="130"><template #default="{ row }"><span :class="pctClass(row.avg)">{{ formatSigned(row.avg) }}</span></template></el-table-column>
+        <el-table-column label="中位最大涨幅" width="130"><template #default="{ row }"><span :class="pctClass(row.median)">{{ formatSigned(row.median) }}</span></template></el-table-column>
       </el-table>
       <h3>明细 · {{ outcome?.count ?? 0 }} 只</h3>
       <el-table :data="sortedStocks" v-loading="outcomeLoading" empty-text="当日没有入选股票"
         :default-sort="{ prop: '20', order: 'descending' }" @sort-change="onOutcomeSort">
         <el-table-column prop="tsCode" label="代码" width="120" />
         <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column v-for="day in horizons" :key="day" :prop="String(day)" :label="`${day}日涨幅`" min-width="110"
+        <el-table-column v-for="day in horizons" :key="day" :prop="String(day)" :label="`${day}日最大涨幅`" min-width="120"
           sortable="custom" align="right">
           <template #default="{ row }"><span :class="pctClass(row.returns[day])">{{ formatSigned(row.returns[day]) }}</span></template>
         </el-table-column>

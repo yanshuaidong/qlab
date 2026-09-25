@@ -53,6 +53,22 @@ function parseMainForceFilters({
   return { minMvYi, flags, rates, minMvWan: minMvYi * 10000 }
 }
 
+function bankName(alias) {
+  const name = `${alias}.name`
+  return `(IFNULL(${name}, '') LIKE '%银行%' OR IFNULL(${name}, '') LIKE '%农商%')`
+}
+
+function excludeBanks() {
+  return `AND NOT EXISTS (
+        SELECT 1 FROM moneyflow_dc n
+        WHERE n.ts_code = m.ts_code AND n.trade_date = m.trade_date AND ${bankName('n')}
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM moneyflow_ths n
+        WHERE n.ts_code = m.ts_code AND n.trade_date = m.trade_date AND ${bankName('n')}
+      )`
+}
+
 function buildHits(flags, rates, minMvWan, startDate, endDate) {
   const branches = []
   const params = []
@@ -62,7 +78,8 @@ function buildHits(flags, rates, minMvWan, startDate, endDate) {
       FROM ${source.table} m
       INNER JOIN daily_basic b ON b.ts_code = m.ts_code AND b.trade_date = m.trade_date
       WHERE m.trade_date >= ? AND m.trade_date <= ?
-        AND b.total_mv >= ? AND m.${source.column} >= ?`)
+        AND b.total_mv >= ? AND m.${source.column} >= ?
+        ${excludeBanks()}`)
     params.push(startDate, endDate, minMvWan, rates[source.rateKey])
   }
   const sql = branches.length
@@ -124,7 +141,8 @@ export function readMainForceOutcomes(db, options = {}) {
   const filters = parseMainForceFilters(options)
   const hits = buildHits(filters.flags, filters.rates, filters.minMvWan, date, date)
   const horizonCols = HORIZONS.map(day =>
-    `MAX(CASE WHEN r.n = ${day} THEN r.close END) AS c${day}`).join(',\n      ')
+    `MAX(CASE WHEN r.n <= ${day} THEN r.high END) AS h${day},
+      SUM(CASE WHEN r.n <= ${day} THEN 1 ELSE 0 END) AS n${day}`).join(',\n      ')
   const raw = db.prepare(`
     WITH hits AS (${hits.sql}),
     named AS (
@@ -141,16 +159,16 @@ export function readMainForceOutcomes(db, options = {}) {
       WHERE h.ts_code IS NOT NULL
     ),
     ranked AS (
-      SELECT d.ts_code, d.close,
+      SELECT d.ts_code, d.high,
         ROW_NUMBER() OVER (PARTITION BY d.ts_code ORDER BY d.trade_date) AS n
       FROM daily d
       INNER JOIN named h ON h.ts_code = d.ts_code
-      WHERE d.trade_date > ? AND d.close > 0
+      WHERE d.trade_date > ? AND d.high > 0
     )
     SELECT h.ts_code AS tsCode, h.name, h.base_close AS baseClose,
       ${horizonCols}
     FROM named h
-    LEFT JOIN ranked r ON r.ts_code = h.ts_code AND r.n IN (3, 5, 10, 15, 20)
+    LEFT JOIN ranked r ON r.ts_code = h.ts_code AND r.n <= 20
     GROUP BY h.ts_code
     ORDER BY h.ts_code
   `).all(...hits.params, date, date, date, date)
@@ -158,8 +176,10 @@ export function readMainForceOutcomes(db, options = {}) {
   const stocks = raw.map(row => {
     const returns = {}
     for (const day of HORIZONS) {
-      const close = row[`c${day}`]
-      returns[day] = row.baseClose > 0 && close != null ? round2((close / row.baseClose - 1) * 100) : null
+      const high = row[`h${day}`]
+      returns[day] = row.baseClose > 0 && row[`n${day}`] >= day && high != null
+        ? round2((high / row.baseClose - 1) * 100)
+        : null
     }
     return { tsCode: row.tsCode, name: row.name || row.tsCode, returns }
   }).sort((a, b) => {
