@@ -4,6 +4,7 @@ import StockKline from './views/StockKline.vue'
 import MarketFlow from './views/MarketFlow.vue'
 import SectorFlow from './views/SectorFlow.vue'
 import HsGt from './views/HsGt.vue'
+import ReasonVector from './views/ReasonVector.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ export default createRouter({
         { path: 'market', component: MarketFlow },
         { path: 'sector', component: SectorFlow },
         { path: 'hsgt', component: HsGt },
+        { path: 'reason-vector', component: ReasonVector },
       ],
     },
   ],

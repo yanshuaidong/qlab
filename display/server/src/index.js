@@ -7,6 +7,7 @@ import express from 'express'
 
 import { openDb } from './db.js'
 import { createApiRouter } from './routes.js'
+import { VectorService } from './reason-vector-service.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 3001)
@@ -33,9 +34,19 @@ app.set('json replacer', (_key, value) =>
   typeof value === 'bigint' ? Number(value) : value,
 )
 
+const vectors = new VectorService()
+process.on('exit', () => vectors.close())
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    vectors.close()
+    db?.close()
+    process.exit(0)
+  })
+}
+
 app.use(
   '/api',
-  createApiRouter(() => ({ db, dbPath, error: dbError })),
+  createApiRouter(() => ({ db, dbPath, error: dbError }), vectors),
 )
 
 if (fs.existsSync(distDir)) {

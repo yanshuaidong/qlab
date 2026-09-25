@@ -19,6 +19,10 @@
           <el-icon><Grid /></el-icon>
           <span>板块资金流</span>
         </el-menu-item>
+        <el-menu-item index="/reason-vector">
+          <el-icon><Search /></el-icon>
+          <span>原因向量</span>
+        </el-menu-item>
         <el-menu-item index="/hsgt">
           <el-icon><Connection /></el-icon>
           <span>沪深港通</span>

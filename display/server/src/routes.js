@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { createReasonVectorRouter } from './reason-vector-routes.js'
+import { VectorService } from './reason-vector-service.js'
 
 const MONEYFLOW_SOURCES = {
   dc: {
@@ -161,7 +163,7 @@ function tableStats(db, table, dateCol) {
     .get()
 }
 
-export function createApiRouter(getDb) {
+export function createApiRouter(getDb, vectors = new VectorService()) {
   const router = Router()
 
   router.use((req, res, next) => {
@@ -174,6 +176,8 @@ export function createApiRouter(getDb) {
     req.dbPath = ctx.dbPath
     next()
   })
+
+  router.use('/reason-vector', createReasonVectorRouter(vectors))
 
   router.get('/meta', (req, res) => {
     const tables = {}
