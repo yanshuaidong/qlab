@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
 import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
-import { readLimitAnalysis, readMainForceWind } from './limit-analysis.js'
+import { readLimitAnalysis, readMainForceOutcomes, readMainForceWind } from './limit-analysis.js'
 
 const MONEYFLOW_SOURCES = {
   dc: {
@@ -157,6 +157,26 @@ function parseQueryNumber(value, name, fallback, min = null) {
     throw new RangeError(min == null ? `${name} 必须是有限数字` : `${name} 必须是有限非负数字`)
   }
   return n
+}
+
+function parseMainForceQuery(query) {
+  if (Array.isArray(query.endDate)) {
+    throw new RangeError('endDate 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01')
+  }
+  if (Array.isArray(query.date)) {
+    throw new RangeError('date 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01')
+  }
+  return {
+    endDate: query.endDate,
+    date: query.date,
+    minMvYi: parseQueryNumber(query.minMvYi, 'minMvYi', 400, 0),
+    dc: parseQuerySwitch(query.dc, 'dc'),
+    dcRate: parseQueryNumber(query.dcRate, 'dcRate', 20),
+    ths: parseQuerySwitch(query.ths, 'ths'),
+    thsRate: parseQueryNumber(query.thsRate, 'thsRate', 20),
+    l2: parseQuerySwitch(query.l2, 'l2'),
+    l2Rate: parseQueryNumber(query.l2Rate, 'l2Rate', 20),
+  }
 }
 
 function parseQuerySwitch(value, name) {
@@ -358,20 +378,16 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
 
   router.get('/limit-analysis/main-force', (req, res, next) => {
     try {
-      const query = req.query
-      if (Array.isArray(query.endDate)) {
-        throw new RangeError('endDate 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01')
-      }
-      res.json(readMainForceWind(req.db, {
-        endDate: query.endDate,
-        minMvYi: parseQueryNumber(query.minMvYi, 'minMvYi', 400, 0),
-        dc: parseQuerySwitch(query.dc, 'dc'),
-        dcRate: parseQueryNumber(query.dcRate, 'dcRate', 20),
-        ths: parseQuerySwitch(query.ths, 'ths'),
-        thsRate: parseQueryNumber(query.thsRate, 'thsRate', 20),
-        l2: parseQuerySwitch(query.l2, 'l2'),
-        l2Rate: parseQueryNumber(query.l2Rate, 'l2Rate', 20),
-      }))
+      res.json(readMainForceWind(req.db, parseMainForceQuery(req.query)))
+    } catch (err) {
+      if (err instanceof RangeError) return res.status(400).json({ error: err.message })
+      next(err)
+    }
+  })
+
+  router.get('/limit-analysis/main-force/outcomes', (req, res, next) => {
+    try {
+      res.json(readMainForceOutcomes(req.db, parseMainForceQuery(req.query)))
     } catch (err) {
       if (err instanceof RangeError) return res.status(400).json({ error: err.message })
       next(err)

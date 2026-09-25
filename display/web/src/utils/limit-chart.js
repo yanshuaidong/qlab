@@ -88,6 +88,7 @@ export function createMainForceChartOption(rows) {
     series: [{
       name: '主力风向',
       type: 'bar',
+      cursor: 'pointer',
       data: rows.map(row => row.count),
       itemStyle: { color: '#3d8bfd' },
       barMaxWidth: 18,

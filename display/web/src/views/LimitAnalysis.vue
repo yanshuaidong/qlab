@@ -66,15 +66,40 @@
       <span v-if="latestWind">区间最新：{{ latestWind.date }} · {{ latestWind.count }} 只</span>
     </div>
     <div class="chart-wrap limit-chart" v-loading="windLoading">
-      <VChart v-if="anyFlowOn && windData?.rows.length" :option="windChartOption" autoresize />
+      <VChart v-if="anyFlowOn && windData?.rows.length" :option="windChartOption" autoresize @click="selectWindDay" />
       <el-empty v-else-if="!windLoading" :description="windEmptyDescription" />
     </div>
-    <p class="hint methodology">统计口径：总市值取当日 daily_basic.total_mv，默认大于等于 400 亿。东财用超大单净流入占比，同花顺用大单净流入占比，L2 主动用超大单净流入占比，默认都大于等于 20%。开关关闭的条件不参与。占比为空或低于门槛不算命中。横轴只展示有行情的日期。</p>
+    <p class="hint methodology">统计口径：总市值取当日 daily_basic.total_mv，默认大于等于 400 亿。东财用超大单净流入占比，同花顺用大单净流入占比，L2 主动用超大单净流入占比，默认都大于等于 20%。开关关闭的条件不参与。占比为空或低于门槛不算命中。横轴只展示有行情的日期。点击柱子查看当日入选股票之后的涨幅。</p>
+
+    <div v-if="selectedDate" ref="outcomeRef" class="outcome-section">
+      <h2>{{ selectedDate }} 入选股票后续表现</h2>
+      <p class="hint">以该日收盘为起点，3／5／10／15／20 日是该股之后第 N 个有收盘价的交易日。涨幅＝后续收盘 ÷ 信号日收盘 − 1。后续行情不足的不计入胜率和平均、中位涨幅。胜率为涨幅大于 0 的股票占有效样本的比例。</p>
+      <el-alert v-if="outcomeError" :title="outcomeError" type="error" :closable="false" show-icon />
+      <h3>总结</h3>
+      <el-table :data="outcome?.summary || []" v-loading="outcomeLoading" empty-text="当日没有入选股票">
+        <el-table-column prop="days" label="区间" width="90"><template #default="{ row }">{{ row.days }} 日</template></el-table-column>
+        <el-table-column prop="sample" label="有效样本" width="100" />
+        <el-table-column prop="wins" label="上涨只数" width="100" />
+        <el-table-column label="胜率" width="100"><template #default="{ row }">{{ formatPercent(row.winRate) }}</template></el-table-column>
+        <el-table-column label="平均涨幅" width="110"><template #default="{ row }"><span :class="pctClass(row.avg)">{{ formatSigned(row.avg) }}</span></template></el-table-column>
+        <el-table-column label="中位涨幅" width="110"><template #default="{ row }"><span :class="pctClass(row.median)">{{ formatSigned(row.median) }}</span></template></el-table-column>
+      </el-table>
+      <h3>明细 · {{ outcome?.count ?? 0 }} 只</h3>
+      <el-table :data="sortedStocks" v-loading="outcomeLoading" empty-text="当日没有入选股票"
+        :default-sort="{ prop: '20', order: 'descending' }" @sort-change="onOutcomeSort">
+        <el-table-column prop="tsCode" label="代码" width="120" />
+        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column v-for="day in horizons" :key="day" :prop="String(day)" :label="`${day}日涨幅`" min-width="110"
+          sortable="custom" align="right">
+          <template #default="{ row }"><span :class="pctClass(row.returns[day])">{{ formatSigned(row.returns[day]) }}</span></template>
+        </el-table-column>
+      </el-table>
+    </div>
   </section>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getJson } from '../api.js'
 import { createLimitChartOption, createMainForceChartOption } from '../utils/limit-chart.js'
 
@@ -92,10 +117,19 @@ const l2Rate = ref(20)
 const windData = ref(null)
 const windLoading = ref(false)
 const windError = ref('')
+const selectedDate = ref('')
+const outcome = ref(null)
+const outcomeLoading = ref(false)
+const outcomeError = ref('')
+const outcomeSort = ref({ prop: '20', order: 'descending' })
+const outcomeRef = ref(null)
+const horizons = [3, 5, 10, 15, 20]
 let requestId = 0
 let controller
 let windRequestId = 0
 let windController
+let outcomeRequestId = 0
+let outcomeController
 
 const latestRow = computed(() => data.value?.rows.at(-1))
 const hasEstimates = computed(() => data.value?.rows.some(row => row.eligibleStocks > 0))
@@ -113,6 +147,41 @@ const windEmptyDescription = computed(() => {
   if (windError.value) return '数据加载失败，请调整筛选或点击刷新重试'
   return '该时间段暂无日线行情，请更换截止日期或点击“最新一年”'
 })
+const sortedStocks = computed(() => {
+  const stocks = outcome.value?.stocks || []
+  const prop = outcomeSort.value.prop
+  const order = outcomeSort.value.order
+  const day = Number(prop)
+  if (!horizons.includes(day) || !order) return stocks
+  const direction = order === 'ascending' ? 1 : -1
+  return [...stocks].sort((a, b) => {
+    const av = a.returns[day]
+    const bv = b.returns[day]
+    if (av == null && bv == null) return a.tsCode < b.tsCode ? -1 : 1
+    if (av == null) return 1
+    if (bv == null) return -1
+    return (av - bv) * direction || (a.tsCode < b.tsCode ? -1 : 1)
+  })
+})
+
+function formatPercent(value) {
+  return value == null ? '—' : `${value.toFixed(2)}%`
+}
+
+function formatSigned(value) {
+  if (value == null) return '—'
+  const text = `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+  return text
+}
+
+function pctClass(value) {
+  if (value == null || value === 0) return ''
+  return value > 0 ? 'up' : 'down'
+}
+
+function onOutcomeSort({ prop, order }) {
+  outcomeSort.value = order ? { prop, order } : { prop: '20', order: 'descending' }
+}
 
 async function load() {
   const id = ++requestId
@@ -148,6 +217,9 @@ async function loadWind() {
     windData.value = null
     windError.value = ''
     windLoading.value = false
+    selectedDate.value = ''
+    outcome.value = null
+    outcomeError.value = ''
     return
   }
   const mv = finiteOrNull(minMvYi.value)
@@ -178,10 +250,61 @@ async function loadWind() {
     const result = await getJson(`/api/limit-analysis/main-force?${params}`, { signal: windController.signal })
     if (id !== windRequestId) return
     windData.value = result
+    if (selectedDate.value) loadOutcomes()
   } catch (err) {
     if (id === windRequestId) windError.value = err.message
   } finally {
     if (id === windRequestId) windLoading.value = false
+  }
+}
+
+async function selectWindDay(event) {
+  if (event.componentType !== 'series' || event.seriesType !== 'bar') return
+  const row = windData.value?.rows[event.dataIndex]
+  if (!row) return
+  selectedDate.value = row.date
+  await loadOutcomes()
+  await nextTick()
+  outcomeRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function loadOutcomes() {
+  const id = ++outcomeRequestId
+  outcomeController?.abort()
+  outcomeController = new AbortController()
+  if (!selectedDate.value || !anyFlowOn.value) {
+    outcome.value = null
+    outcomeError.value = ''
+    outcomeLoading.value = false
+    return
+  }
+  const mv = finiteOrNull(minMvYi.value)
+  const rates = {
+    dcRate: finiteOrNull(dcRate.value),
+    thsRate: finiteOrNull(thsRate.value),
+    l2Rate: finiteOrNull(l2Rate.value),
+  }
+  if (mv == null || mv < 0) return
+  outcomeLoading.value = true
+  outcomeError.value = ''
+  try {
+    const params = new URLSearchParams({
+      date: selectedDate.value,
+      minMvYi: String(mv),
+      dc: dcOn.value ? '1' : '0',
+      dcRate: String(rates.dcRate ?? 20),
+      ths: thsOn.value ? '1' : '0',
+      thsRate: String(rates.thsRate ?? 20),
+      l2: l2On.value ? '1' : '0',
+      l2Rate: String(rates.l2Rate ?? 20),
+    })
+    const result = await getJson(`/api/limit-analysis/main-force/outcomes?${params}`, { signal: outcomeController.signal })
+    if (id !== outcomeRequestId) return
+    outcome.value = result
+  } catch (err) {
+    if (id === outcomeRequestId) outcomeError.value = err.message
+  } finally {
+    if (id === outcomeRequestId) outcomeLoading.value = false
   }
 }
 
@@ -194,8 +317,10 @@ onMounted(load)
 onBeforeUnmount(() => {
   requestId++
   windRequestId++
+  outcomeRequestId++
   controller?.abort()
   windController?.abort()
+  outcomeController?.abort()
 })
 </script>
 
@@ -211,4 +336,6 @@ h1 { margin: 0 12px 0 0; font-size: 18px; }
 h2 { margin: 0; font-size: 16px; }
 .wind-toolbar { margin-top: 8px; }
 .wind-filter { display: inline-flex; align-items: center; gap: 6px; }
+h3 { margin: 8px 0 0; font-size: 14px; }
+.outcome-section { display: flex; flex-direction: column; gap: 8px; }
 </style>

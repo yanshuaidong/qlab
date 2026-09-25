@@ -31,6 +31,60 @@ const FLOW_SOURCES = [
   { key: 'ths', table: 'moneyflow_ths', column: 'buy_lg_amount_rate', rateKey: 'thsRate' },
   { key: 'l2', table: 'moneyflow', column: 'buy_elg_amount_rate', rateKey: 'l2Rate' },
 ]
+const HORIZONS = [3, 5, 10, 15, 20]
+
+function parseMainForceFilters({
+  minMvYi = 400,
+  dc = true,
+  dcRate = 20,
+  ths = true,
+  thsRate = 20,
+  l2 = true,
+  l2Rate = 20,
+}) {
+  assertFinite(minMvYi, 'minMvYi')
+  if (minMvYi < 0) throw new RangeError('minMvYi 必须是有限非负数字')
+  const flags = { dc, ths, l2 }
+  const rates = { dcRate, thsRate, l2Rate }
+  for (const source of FLOW_SOURCES) {
+    assertSwitch(flags[source.key], source.key)
+    assertFinite(rates[source.rateKey], source.rateKey)
+  }
+  return { minMvYi, flags, rates, minMvWan: minMvYi * 10000 }
+}
+
+function buildHits(flags, rates, minMvWan, startDate, endDate) {
+  const branches = []
+  const params = []
+  for (const source of FLOW_SOURCES) {
+    if (!flags[source.key]) continue
+    branches.push(`SELECT m.trade_date, m.ts_code
+      FROM ${source.table} m
+      INNER JOIN daily_basic b ON b.ts_code = m.ts_code AND b.trade_date = m.trade_date
+      WHERE m.trade_date >= ? AND m.trade_date <= ?
+        AND b.total_mv >= ? AND m.${source.column} >= ?`)
+    params.push(startDate, endDate, minMvWan, rates[source.rateKey])
+  }
+  const sql = branches.length
+    ? branches.join('\nUNION\n')
+    : 'SELECT NULL AS trade_date, NULL AS ts_code WHERE 0'
+  return { sql, params }
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100
+}
+
+function summarize(values) {
+  const sample = values.filter(value => value != null)
+  if (!sample.length) return { sample: 0, wins: 0, winRate: null, avg: null, median: null }
+  const wins = sample.filter(value => value > 0).length
+  const sorted = [...sample].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  const avg = sample.reduce((sum, value) => sum + value, 0) / sample.length
+  return { sample: sample.length, wins, winRate: round2(wins * 100 / sample.length), avg: round2(avg), median: round2(median) }
+}
 
 export function readMainForceWind(db, {
   endDate: requestedEndDate,
@@ -43,35 +97,15 @@ export function readMainForceWind(db, {
   l2Rate = 20,
 } = {}) {
   const { startDate, endDate, latestDate } = resolveWindow(db, requestedEndDate)
-  assertFinite(minMvYi, 'minMvYi')
-  if (minMvYi < 0) throw new RangeError('minMvYi 必须是有限非负数字')
-  const flags = { dc, ths, l2 }
-  const rates = { dcRate, thsRate, l2Rate }
-  for (const source of FLOW_SOURCES) {
-    assertSwitch(flags[source.key], source.key)
-    assertFinite(rates[source.rateKey], source.rateKey)
-  }
-
-  const minMvWan = minMvYi * 10000
-  const branches = []
-  const params = [startDate, endDate]
-  for (const source of FLOW_SOURCES) {
-    if (!flags[source.key]) continue
-    branches.push(`SELECT m.trade_date, m.ts_code
-      FROM ${source.table} m
-      INNER JOIN daily_basic b ON b.ts_code = m.ts_code AND b.trade_date = m.trade_date
-      WHERE m.trade_date >= ? AND m.trade_date <= ?
-        AND b.total_mv >= ? AND m.${source.column} >= ?`)
-    params.push(startDate, endDate, minMvWan, rates[source.rateKey])
-  }
-  const hits = branches.length
-    ? `hits AS (${branches.join('\nUNION\n')})`
-    : `hits AS (SELECT NULL AS trade_date, NULL AS ts_code WHERE 0)`
+  const filters = parseMainForceFilters({ minMvYi, dc, dcRate, ths, thsRate, l2, l2Rate })
+  const hits = buildHits(filters.flags, filters.rates, filters.minMvWan, startDate, endDate)
+  const params = [startDate, endDate, ...hits.params]
+  const hitCte = `hits AS (${hits.sql})`
   const rows = db.prepare(`
     WITH days AS (
       SELECT DISTINCT trade_date AS date FROM daily
       WHERE trade_date >= ? AND trade_date <= ?
-    ), ${hits}
+    ), ${hitCte}
     SELECT d.date, COUNT(h.ts_code) AS count
     FROM days d
     LEFT JOIN hits h ON h.trade_date = d.date
@@ -79,7 +113,68 @@ export function readMainForceWind(db, {
     ORDER BY d.date
   `).all(...params).map(row => ({ date: row.date, count: row.count }))
 
-  return { startDate, endDate, latestDate, minMvYi, rows }
+  return { startDate, endDate, latestDate, minMvYi: filters.minMvYi, rows }
+}
+
+export function readMainForceOutcomes(db, options = {}) {
+  const date = options.date
+  if (!isCalendarDate(date) || date < '0002-01-01') {
+    throw new RangeError('date 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01')
+  }
+  const filters = parseMainForceFilters(options)
+  const hits = buildHits(filters.flags, filters.rates, filters.minMvWan, date, date)
+  const horizonCols = HORIZONS.map(day =>
+    `MAX(CASE WHEN r.n = ${day} THEN r.close END) AS c${day}`).join(',\n      ')
+  const raw = db.prepare(`
+    WITH hits AS (${hits.sql}),
+    named AS (
+      SELECT h.ts_code,
+        COALESCE(
+          (SELECT m.name FROM moneyflow_dc m
+           WHERE m.ts_code = h.ts_code AND m.trade_date = ? AND NULLIF(TRIM(m.name), '') IS NOT NULL),
+          (SELECT t.name FROM moneyflow_ths t
+           WHERE t.ts_code = h.ts_code AND t.trade_date = ? AND NULLIF(TRIM(t.name), '') IS NOT NULL)
+        ) AS name,
+        (SELECT d.close FROM daily d
+         WHERE d.ts_code = h.ts_code AND d.trade_date = ? AND d.close > 0) AS base_close
+      FROM hits h
+      WHERE h.ts_code IS NOT NULL
+    ),
+    ranked AS (
+      SELECT d.ts_code, d.close,
+        ROW_NUMBER() OVER (PARTITION BY d.ts_code ORDER BY d.trade_date) AS n
+      FROM daily d
+      INNER JOIN named h ON h.ts_code = d.ts_code
+      WHERE d.trade_date > ? AND d.close > 0
+    )
+    SELECT h.ts_code AS tsCode, h.name, h.base_close AS baseClose,
+      ${horizonCols}
+    FROM named h
+    LEFT JOIN ranked r ON r.ts_code = h.ts_code AND r.n IN (3, 5, 10, 15, 20)
+    GROUP BY h.ts_code
+    ORDER BY h.ts_code
+  `).all(...hits.params, date, date, date, date)
+
+  const stocks = raw.map(row => {
+    const returns = {}
+    for (const day of HORIZONS) {
+      const close = row[`c${day}`]
+      returns[day] = row.baseClose > 0 && close != null ? round2((close / row.baseClose - 1) * 100) : null
+    }
+    return { tsCode: row.tsCode, name: row.name || row.tsCode, returns }
+  }).sort((a, b) => {
+    const av = a.returns[20]
+    const bv = b.returns[20]
+    if (av == null && bv == null) return a.tsCode < b.tsCode ? -1 : 1
+    if (av == null) return 1
+    if (bv == null) return -1
+    return bv - av || (a.tsCode < b.tsCode ? -1 : 1)
+  })
+  const summary = HORIZONS.map(days => ({
+    days,
+    ...summarize(stocks.map(stock => stock.returns[days])),
+  }))
+  return { date, count: stocks.length, horizons: HORIZONS, summary, stocks }
 }
 
 export function readLimitAnalysis(db, requestedEndDate) {

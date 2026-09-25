@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
 import express from 'express'
 import { createApiRouter } from '../src/routes.js'
-import { readLimitAnalysis, readMainForceWind } from '../src/limit-analysis.js'
+import { readLimitAnalysis, readMainForceOutcomes, readMainForceWind } from '../src/limit-analysis.js'
 import { createLimitChartOption, createMainForceChartOption } from '../../web/src/utils/limit-chart.js'
 
 function fixture(t) {
@@ -205,6 +205,7 @@ test('主力风向图表按股票只数从零轴向上', () => {
   assert.equal(option.yAxis.min, 0)
   assert.equal(option.yAxis.name, '股票数量（只）')
   assert.equal(option.tooltip.valueFormatter(3), '3 只')
+  assert.equal(option.series[0].cursor, 'pointer')
 })
 
 test('主力风向 API 校验市值、占比和开关', async t => {
@@ -225,4 +226,45 @@ test('主力风向 API 校验市值、占比和开关', async t => {
     const invalid = await fetch(`${url}?${query}`)
     assert.equal(invalid.status, 400, query)
   }
+})
+
+test('点击日期按该股后续交易日计算涨幅，去重后汇总胜率并按20日降序', t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  db.exec(`CREATE TABLE daily (ts_code TEXT, trade_date TEXT, close REAL, pre_close REAL, vol REAL);
+    CREATE TABLE daily_basic (ts_code TEXT, trade_date TEXT, total_mv REAL);
+    CREATE TABLE moneyflow_dc (ts_code TEXT, trade_date TEXT, name TEXT, buy_elg_amount_rate REAL);
+    CREATE TABLE moneyflow_ths (ts_code TEXT, trade_date TEXT, name TEXT, buy_lg_amount_rate REAL);
+    CREATE TABLE moneyflow (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL);`)
+  const signal = '2026-09-01'
+  function add(code, name, closes, { dc = 20, l2 = null } = {}) {
+    db.prepare('INSERT INTO daily_basic VALUES (?, ?, 4000000)').run(code, signal)
+    db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?, ?)').run(code, signal, name, dc)
+    if (l2 != null) db.prepare('INSERT INTO moneyflow VALUES (?, ?, ?)').run(code, signal, l2)
+    closes.forEach((close, index) => {
+      const day = index === 0 ? signal : `2026-09-${String(index + 1).padStart(2, '0')}`
+      db.prepare('INSERT INTO daily VALUES (?, ?, ?, 10, 100)').run(code, day, close)
+    })
+  }
+  add('600001.SH', '领先', [10, ...Array.from({ length: 20 }, (_, i) => 10 + (i + 1) * 0.1)])
+  add('600002.SH', '落后', [10, 9, 9, 8])
+  add('600003.SH', '重复', [10], { dc: 30, l2: 40 })
+  add('600004.SH', '不够', [10], { dc: 10 })
+  const result = readMainForceOutcomes(db, { date: signal, minMvYi: 400 })
+  assert.equal(result.count, 3)
+  assert.deepEqual(result.stocks.map(stock => stock.tsCode), ['600001.SH', '600002.SH', '600003.SH'])
+  assert.equal(result.stocks[0].name, '领先')
+  assert.equal(result.stocks[0].returns[3], 3)
+  assert.equal(result.stocks[0].returns[20], 20)
+  assert.equal(result.stocks[1].returns[3], -20)
+  assert.equal(result.stocks[1].returns[20], null)
+  assert.equal(result.stocks[2].returns[3], null)
+  const day3 = result.summary.find(row => row.days === 3)
+  assert.equal(day3.sample, 2)
+  assert.equal(day3.wins, 1)
+  assert.equal(day3.winRate, 50)
+  const day20 = result.summary.find(row => row.days === 20)
+  assert.equal(day20.sample, 1)
+  assert.equal(day20.wins, 1)
+  assert.equal(readMainForceOutcomes(db, { date: signal, dc: false, ths: false, l2: true }).count, 1)
 })

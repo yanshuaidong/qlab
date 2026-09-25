@@ -45,6 +45,8 @@ npm run dev
 - 只读 API：`GET /api/limit-analysis?endDate=YYYY-MM-DD`，返回起止日期、最新行情日期、`estimated: true` 及按日期升序排列的 `rows`；每项包含 `date`、`up`、`down`、`totalStocks` 和 `eligibleStocks`。
 - 同一页下方的「主力风向表」先按当日 `daily_basic.total_mv` 保留总市值大于等于门槛的股票（默认 400 亿），再统计其中至少命中一个已开启净流入条件的股票只数。同一只股票当天只计 1 只。三个条件默认开启：东财超大单净流入占比、同花顺大单净流入占比、L2 主动超大单净流入占比，门槛默认都是 20%。关闭的条件不参与；占比为空或低于门槛不算命中。横轴与上方图表同一段近一年，只展示有行情的日期。
 - 只读 API：`GET /api/limit-analysis/main-force?endDate=YYYY-MM-DD&minMvYi=400&dc=1&dcRate=20&ths=1&thsRate=20&l2=1&l2Rate=20`。`minMvYi` 缺省 400，三个开关缺省为开且只接受 `0`/`1`，三个占比缺省 20。返回按日期升序的 `rows`，每项为 `date` 和 `count`。
+- 点击某日柱子后，用同一套筛选列出当日入选股票。总结表给出 3／5／10／15／20 个该股后续交易日的有效样本、上涨只数、胜率、平均涨幅和中位涨幅；明细表给出每只股票各区间涨幅，默认按 20 日涨幅从高到低，五个区间都可升序或降序，缺失行情排在最后。涨幅＝后续收盘 ÷ 信号日收盘 − 1，涨幅大于 0 记为上涨，后续不足的不计入胜率。
+- 只读 API：`GET /api/limit-analysis/main-force/outcomes?date=YYYY-MM-DD`，筛选参数与主力风向相同。`date` 必填。
 
 ## 信号分析
 
