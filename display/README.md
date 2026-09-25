@@ -43,6 +43,8 @@ npm run dev
 - 使用 `daily` 未复权收盘价与前收盘价，ST 状态仅取同一交易日的 `moneyflow_dc`／`moneyflow_ths` 名称。主板缺少当日名称、停牌、无效价格和不支持的代码不计入，摘要显示参与估算的股票数。全天没有可估算记录时保留缺口，不显示为零涨跌停。
 - 新股无涨跌幅限制期、退市整理等特殊规则无法准确识别；盘中触及但收盘未封板不计入。数据不完整时结果可能低于实际市场数量。
 - 只读 API：`GET /api/limit-analysis?endDate=YYYY-MM-DD`，返回起止日期、最新行情日期、`estimated: true` 及按日期升序排列的 `rows`；每项包含 `date`、`up`、`down`、`totalStocks` 和 `eligibleStocks`。
+- 同一页下方的「主力风向表」先按当日 `daily_basic.total_mv` 保留总市值大于等于门槛的股票（默认 400 亿），再统计其中至少命中一个已开启净流入条件的股票只数。同一只股票当天只计 1 只。三个条件默认开启：东财超大单净流入占比、同花顺大单净流入占比、L2 主动超大单净流入占比，门槛默认都是 20%。关闭的条件不参与；占比为空或低于门槛不算命中。横轴与上方图表同一段近一年，只展示有行情的日期。
+- 只读 API：`GET /api/limit-analysis/main-force?endDate=YYYY-MM-DD&minMvYi=400&dc=1&dcRate=20&ths=1&thsRate=20&l2=1&l2Rate=20`。`minMvYi` 缺省 400，三个开关缺省为开且只接受 `0`/`1`，三个占比缺省 20。返回按日期升序的 `rows`，每项为 `date` 和 `count`。
 
 ## 信号分析
 

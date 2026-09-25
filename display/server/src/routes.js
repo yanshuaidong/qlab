@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
 import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
-import { readLimitAnalysis } from './limit-analysis.js'
+import { readLimitAnalysis, readMainForceWind } from './limit-analysis.js'
 
 const MONEYFLOW_SOURCES = {
   dc: {
@@ -145,6 +145,25 @@ function parseMvYi(value) {
   const n = Number(value)
   if (!Number.isFinite(n) || n < 0) return null
   return n
+}
+
+function parseQueryNumber(value, name, fallback, min = null) {
+  if (value === undefined) return fallback
+  if (Array.isArray(value) || typeof value !== 'string' || value.trim() === '') {
+    throw new RangeError(min == null ? `${name} 必须是有限数字` : `${name} 必须是有限非负数字`)
+  }
+  const n = Number(value)
+  if (!Number.isFinite(n) || (min != null && n < min)) {
+    throw new RangeError(min == null ? `${name} 必须是有限数字` : `${name} 必须是有限非负数字`)
+  }
+  return n
+}
+
+function parseQuerySwitch(value, name) {
+  if (value === undefined) return true
+  if (value === '1') return true
+  if (value === '0') return false
+  throw new RangeError(`${name} 必须是 0 或 1`)
 }
 
 function hasTable(db, name) {
@@ -331,6 +350,28 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
   router.get('/limit-analysis', (req, res, next) => {
     try {
       res.json(readLimitAnalysis(req.db, req.query.endDate))
+    } catch (err) {
+      if (err instanceof RangeError) return res.status(400).json({ error: err.message })
+      next(err)
+    }
+  })
+
+  router.get('/limit-analysis/main-force', (req, res, next) => {
+    try {
+      const query = req.query
+      if (Array.isArray(query.endDate)) {
+        throw new RangeError('endDate 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01')
+      }
+      res.json(readMainForceWind(req.db, {
+        endDate: query.endDate,
+        minMvYi: parseQueryNumber(query.minMvYi, 'minMvYi', 400, 0),
+        dc: parseQuerySwitch(query.dc, 'dc'),
+        dcRate: parseQueryNumber(query.dcRate, 'dcRate', 20),
+        ths: parseQuerySwitch(query.ths, 'ths'),
+        thsRate: parseQueryNumber(query.thsRate, 'thsRate', 20),
+        l2: parseQuerySwitch(query.l2, 'l2'),
+        l2Rate: parseQueryNumber(query.l2Rate, 'l2Rate', 20),
+      }))
     } catch (err) {
       if (err instanceof RangeError) return res.status(400).json({ error: err.message })
       next(err)

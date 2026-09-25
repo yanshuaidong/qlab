@@ -4,8 +4,8 @@ import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
 import express from 'express'
 import { createApiRouter } from '../src/routes.js'
-import { readLimitAnalysis } from '../src/limit-analysis.js'
-import { createLimitChartOption } from '../../web/src/utils/limit-chart.js'
+import { readLimitAnalysis, readMainForceWind } from '../src/limit-analysis.js'
+import { createLimitChartOption, createMainForceChartOption } from '../../web/src/utils/limit-chart.js'
 
 function fixture(t) {
   const db = new DatabaseSync(':memory:')
@@ -151,4 +151,78 @@ test('API校验日期参数，刷新能读取新行情', async t => {
   insert(db, '000001.SZ', 9)
   const refreshed = await (await fetch(`${url}?endDate=2026-09-17`)).json()
   assert.equal(refreshed.rows[0].down, 1)
+})
+
+function windFixture(t) {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  db.exec(`CREATE TABLE daily (
+    ts_code TEXT, trade_date TEXT, close REAL, pre_close REAL, vol REAL,
+    PRIMARY KEY (ts_code, trade_date)
+  );
+  CREATE TABLE daily_basic (ts_code TEXT, trade_date TEXT, total_mv REAL, PRIMARY KEY (ts_code, trade_date));
+  CREATE TABLE moneyflow_dc (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
+  CREATE TABLE moneyflow_ths (ts_code TEXT, trade_date TEXT, buy_lg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));
+  CREATE TABLE moneyflow (ts_code TEXT, trade_date TEXT, buy_elg_amount_rate REAL, PRIMARY KEY (ts_code, trade_date));`)
+  return db
+}
+
+function windDay(db, code, { date = '2026-09-17', mv = 4000000, dc = null, ths = null, l2 = null } = {}) {
+  db.prepare('INSERT INTO daily VALUES (?, ?, 10, 10, 100)').run(code, date)
+  if (mv != null) db.prepare('INSERT INTO daily_basic VALUES (?, ?, ?)').run(code, date, mv)
+  if (dc != null) db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?)').run(code, date, dc)
+  if (ths != null) db.prepare('INSERT INTO moneyflow_ths VALUES (?, ?, ?)').run(code, date, ths)
+  if (l2 != null) db.prepare('INSERT INTO moneyflow VALUES (?, ?, ?)').run(code, date, l2)
+}
+
+test('主力风向按股票去重，先筛当日总市值再看开启的占比', t => {
+  const db = windFixture(t)
+  windDay(db, '600001.SH', { ths: 20 })
+  windDay(db, '600002.SH', { dc: 25, l2: 30 })
+  windDay(db, '600003.SH', { dc: 19.99 })
+  windDay(db, '600004.SH')
+  db.prepare('INSERT INTO moneyflow_dc VALUES (?, ?, ?)').run('600004.SH', '2026-09-17', null)
+  windDay(db, '600005.SH', { mv: 3999999.99, dc: 80, ths: 80, l2: 80 })
+  windDay(db, '600006.SH', { mv: null, dc: 80 })
+  windDay(db, '600007.SH', { date: '2026-09-16', dc: 10 })
+  windDay(db, '600008.SH', { date: '2025-09-17', dc: 80 })
+  const result = readMainForceWind(db, { endDate: '2026-09-17', minMvYi: 400 })
+  assert.equal(result.minMvYi, 400)
+  assert.deepEqual(result.rows.map(row => [row.date, row.count]), [
+    ['2026-09-16', 0],
+    ['2026-09-17', 2],
+  ])
+  assert.equal(readMainForceWind(db, { endDate: '2026-09-17', ths: false }).rows.at(-1).count, 1)
+  assert.equal(readMainForceWind(db, { endDate: '2026-09-17', dc: false, ths: false, l2: false }).rows.at(-1).count, 0)
+})
+
+test('主力风向图表按股票只数从零轴向上', () => {
+  const option = createMainForceChartOption([
+    { date: '2026-09-16', count: 0 },
+    { date: '2026-09-17', count: 3 },
+  ])
+  assert.deepEqual(option.series[0].data, [0, 3])
+  assert.equal(option.yAxis.min, 0)
+  assert.equal(option.yAxis.name, '股票数量（只）')
+  assert.equal(option.tooltip.valueFormatter(3), '3 只')
+})
+
+test('主力风向 API 校验市值、占比和开关', async t => {
+  const db = windFixture(t)
+  windDay(db, '600001.SH', { dc: 20 })
+  const app = express()
+  app.use('/api', createApiRouter(() => ({ db, dbPath: ':memory:' }), {}))
+  const server = app.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => {
+    server.close(err => err ? reject(err) : resolve())
+    server.closeAllConnections()
+  }))
+  const url = `http://127.0.0.1:${server.address().port}/api/limit-analysis/main-force`
+  const ok = await (await fetch(`${url}?endDate=2026-09-17`)).json()
+  assert.equal(ok.rows[0].count, 1)
+  for (const query of ['minMvYi=-1', 'minMvYi=bad', 'minMvYi=', 'dcRate=NaN', 'dc=2', 'dc=true', 'ths=yes', 'l2=']) {
+    const invalid = await fetch(`${url}?${query}`)
+    assert.equal(invalid.status, 400, query)
+  }
 })
