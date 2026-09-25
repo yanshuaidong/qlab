@@ -92,3 +92,11 @@ python -B -m unittest discover -s research/stock/reason_vector -p test_worker.py
 ```
 
 测试通过注入 fake 模型及存储，覆盖去重、UUID、标签不变复用、增删标签、过滤后 top k、排序阈值、余弦分数、版本/路径/维度变化、空索引、参数错误、推理/存储/原子发布失败恢复、清理失败以及多请求 JSONL，也验证离线加载参数、缺依赖错误、manifest 字段和 stdout 隔离。2026-09-25 本地执行结果：22 项测试全部通过（0.154 秒）。真实模型与真实 Qdrant 的集成验证需在部署环境准备完成后另行执行。
+
+
+
+$env:REASON_VECTOR_MODEL_PATH = 'D:\ysd\qlab\storage\models\bge-m3'
+$env:REASON_VECTOR_MODEL_VERSION = ((git ls-remote https://www.modelscope.cn/BAAI/bge-m3.git HEAD) -split '\s+')[0]
+
+cd D:\ysd\qlab\display
+npm run dev

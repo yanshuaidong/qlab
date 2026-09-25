@@ -213,6 +213,9 @@ __marimo__/
 # Local downloaded models (keep on disk, do not commit)
 /storage/models/
 
+# Local Qdrant vector index and runtime locks (keep on disk, do not commit)
+/storage/stock/reason_vectors/
+
 # Node.js
 node_modules/
 
