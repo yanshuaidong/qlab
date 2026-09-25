@@ -6,6 +6,7 @@ import SectorFlow from './views/SectorFlow.vue'
 import HsGt from './views/HsGt.vue'
 import ReasonVector from './views/ReasonVector.vue'
 import SignalAnalysis from './views/SignalAnalysis.vue'
+import LimitAnalysis from './views/LimitAnalysis.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ export default createRouter({
         { path: '', redirect: '/kline' },
         { path: 'kline', component: StockKline },
         { path: 'market', component: MarketFlow },
+        { path: 'limit-analysis', component: LimitAnalysis },
         { path: 'sector', component: SectorFlow },
         { path: 'hsgt', component: HsGt },
         { path: 'reason-vector', component: ReasonVector },

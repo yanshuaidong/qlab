@@ -15,6 +15,10 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>大盘资金流</span>
         </el-menu-item>
+        <el-menu-item index="/limit-analysis">
+          <el-icon><Histogram /></el-icon>
+          <span>涨停跌停</span>
+        </el-menu-item>
         <el-menu-item index="/sector">
           <el-icon><Grid /></el-icon>
           <span>板块资金流</span>

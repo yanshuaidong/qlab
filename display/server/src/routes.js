@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
 import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
+import { readLimitAnalysis } from './limit-analysis.js'
 
 const MONEYFLOW_SOURCES = {
   dc: {
@@ -325,6 +326,15 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
       unit: spec.unit,
       rows,
     })
+  })
+
+  router.get('/limit-analysis', (req, res, next) => {
+    try {
+      res.json(readLimitAnalysis(req.db, req.query.endDate))
+    } catch (err) {
+      if (err instanceof RangeError) return res.status(400).json({ error: err.message })
+      next(err)
+    }
   })
 
   router.get('/market-flow', (req, res) => {
