@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
+import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
 
 const MONEYFLOW_SOURCES = {
   dc: {
@@ -415,6 +416,24 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
         .all(tsCode)
     }
     res.json(payload)
+  })
+
+  router.get('/signal-analysis/signals', (req, res, next) => {
+    try {
+      res.json(readSignalStocks(req.db, req.query))
+    } catch (err) {
+      if (err instanceof RangeError) return res.status(400).json({ error: err.message })
+      next(err)
+    }
+  })
+
+  router.get('/signal-analysis', (req, res) => {
+    const endDate = req.query.endDate
+    if (endDate !== undefined && (!isCalendarDate(endDate) || endDate < '0002-01-01')) {
+      res.status(400).json({ error: 'endDate 必须是有效日期（YYYY-MM-DD），且不早于 0002-01-01' })
+      return
+    }
+    res.json(readSignalAnalysis(req.db, endDate))
   })
 
   router.get('/marks/:tsCode', (req, res) => {

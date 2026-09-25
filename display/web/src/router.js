@@ -5,6 +5,7 @@ import MarketFlow from './views/MarketFlow.vue'
 import SectorFlow from './views/SectorFlow.vue'
 import HsGt from './views/HsGt.vue'
 import ReasonVector from './views/ReasonVector.vue'
+import SignalAnalysis from './views/SignalAnalysis.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -19,6 +20,7 @@ export default createRouter({
         { path: 'sector', component: SectorFlow },
         { path: 'hsgt', component: HsGt },
         { path: 'reason-vector', component: ReasonVector },
+        { path: 'signal-analysis', component: SignalAnalysis },
       ],
     },
   ],

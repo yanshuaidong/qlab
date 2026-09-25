@@ -6,8 +6,8 @@ async function parseJson(res) {
   return body
 }
 
-export async function getJson(url) {
-  return parseJson(await fetch(url))
+export async function getJson(url, options) {
+  return parseJson(await fetch(url, options))
 }
 
 export async function sendJson(url, method, payload) {
