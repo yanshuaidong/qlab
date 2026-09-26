@@ -288,4 +288,20 @@ test('点击日期按后续交易日最高价计算最大涨幅，去重后汇�
   assert.equal(day20.sample, 1)
   assert.equal(day20.wins, 1)
   assert.equal(readMainForceOutcomes(db, { date: signal, dc: false, ths: false, l2: true }).count, 1)
+  assert.equal(result.stocks[0].reason, '')
+})
+
+test('入选明细带回当天 trend_mark.reason', t => {
+  const db = windFixture(t)
+  windDay(db, '600001.SH', { name: '领先', dc: 20 })
+  windDay(db, '600002.SH', { name: '无原因', dc: 20 })
+  db.exec(`CREATE TABLE trend_mark (
+    ts_code TEXT, trade_date TEXT, reason TEXT, UNIQUE (ts_code, trade_date)
+  )`)
+  db.prepare('INSERT INTO trend_mark VALUES (?, ?, ?)').run('600001.SH', '2026-09-17', '  供给收紧  ')
+  db.prepare('INSERT INTO trend_mark VALUES (?, ?, ?)').run('600001.SH', '2026-09-16', '其他日期')
+  db.prepare('INSERT INTO trend_mark VALUES (?, ?, ?)').run('600002.SH', '2026-09-17', '   ')
+  const stocks = readMainForceOutcomes(db, { date: '2026-09-17' }).stocks
+  assert.equal(stocks.find(stock => stock.tsCode === '600001.SH').reason, '供给收紧')
+  assert.equal(stocks.find(stock => stock.tsCode === '600002.SH').reason, '')
 })

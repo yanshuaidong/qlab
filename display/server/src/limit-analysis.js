@@ -92,6 +92,10 @@ function round2(value) {
   return Math.round(value * 100) / 100
 }
 
+function hasTable(db, name) {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name))
+}
+
 function summarize(values) {
   const sample = values.filter(value => value != null)
   if (!sample.length) return { sample: 0, wins: 0, winRate: null, avg: null, median: null }
@@ -140,6 +144,10 @@ export function readMainForceOutcomes(db, options = {}) {
   }
   const filters = parseMainForceFilters(options)
   const hits = buildHits(filters.flags, filters.rates, filters.minMvWan, date, date)
+  const includeReason = hasTable(db, 'trend_mark')
+  const reasonSql = includeReason
+    ? `(SELECT k.reason FROM trend_mark k WHERE k.ts_code = h.ts_code AND k.trade_date = ?) AS reason`
+    : `NULL AS reason`
   const horizonCols = HORIZONS.map(day =>
     `MAX(CASE WHEN r.n <= ${day} THEN r.high END) AS h${day},
       SUM(CASE WHEN r.n <= ${day} THEN 1 ELSE 0 END) AS n${day}`).join(',\n      ')
@@ -154,7 +162,8 @@ export function readMainForceOutcomes(db, options = {}) {
            WHERE t.ts_code = h.ts_code AND t.trade_date = ? AND NULLIF(TRIM(t.name), '') IS NOT NULL)
         ) AS name,
         (SELECT d.close FROM daily d
-         WHERE d.ts_code = h.ts_code AND d.trade_date = ? AND d.close > 0) AS base_close
+         WHERE d.ts_code = h.ts_code AND d.trade_date = ? AND d.close > 0) AS base_close,
+        ${reasonSql}
       FROM hits h
       WHERE h.ts_code IS NOT NULL
     ),
@@ -165,13 +174,13 @@ export function readMainForceOutcomes(db, options = {}) {
       INNER JOIN named h ON h.ts_code = d.ts_code
       WHERE d.trade_date > ? AND d.high > 0
     )
-    SELECT h.ts_code AS tsCode, h.name, h.base_close AS baseClose,
+    SELECT h.ts_code AS tsCode, h.name, h.reason, h.base_close AS baseClose,
       ${horizonCols}
     FROM named h
     LEFT JOIN ranked r ON r.ts_code = h.ts_code AND r.n <= 20
     GROUP BY h.ts_code
     ORDER BY h.ts_code
-  `).all(...hits.params, date, date, date, date)
+  `).all(...hits.params, date, date, date, ...(includeReason ? [date] : []), date)
 
   const stocks = raw.map(row => {
     const returns = {}
@@ -181,7 +190,7 @@ export function readMainForceOutcomes(db, options = {}) {
         ? round2((high / row.baseClose - 1) * 100)
         : null
     }
-    return { tsCode: row.tsCode, name: row.name || row.tsCode, returns }
+    return { tsCode: row.tsCode, name: row.name || row.tsCode, reason: (row.reason || '').trim(), returns }
   }).sort((a, b) => {
     const av = a.returns[20]
     const bv = b.returns[20]

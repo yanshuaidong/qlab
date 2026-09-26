@@ -19,6 +19,10 @@
           <el-icon><Histogram /></el-icon>
           <span>涨停跌停</span>
         </el-menu-item>
+        <el-menu-item index="/block-trade">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>大宗交易</span>
+        </el-menu-item>
         <el-menu-item index="/sector">
           <el-icon><Grid /></el-icon>
           <span>板块资金流</span>

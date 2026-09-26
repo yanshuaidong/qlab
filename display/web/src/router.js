@@ -7,6 +7,7 @@ import HsGt from './views/HsGt.vue'
 import ReasonVector from './views/ReasonVector.vue'
 import SignalAnalysis from './views/SignalAnalysis.vue'
 import LimitAnalysis from './views/LimitAnalysis.vue'
+import BlockTrade from './views/BlockTrade.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -19,6 +20,7 @@ export default createRouter({
         { path: 'kline', component: StockKline },
         { path: 'market', component: MarketFlow },
         { path: 'limit-analysis', component: LimitAnalysis },
+        { path: 'block-trade', component: BlockTrade },
         { path: 'sector', component: SectorFlow },
         { path: 'hsgt', component: HsGt },
         { path: 'reason-vector', component: ReasonVector },

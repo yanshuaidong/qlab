@@ -84,7 +84,10 @@
         <el-table-column label="平均最大涨幅" width="130"><template #default="{ row }"><span :class="pctClass(row.avg)">{{ formatSigned(row.avg) }}</span></template></el-table-column>
         <el-table-column label="中位最大涨幅" width="130"><template #default="{ row }"><span :class="pctClass(row.median)">{{ formatSigned(row.median) }}</span></template></el-table-column>
       </el-table>
-      <h3>明细 · {{ outcome?.count ?? 0 }} 只</h3>
+      <div class="detail-head">
+        <h3>明细 · {{ outcome?.count ?? 0 }} 只</h3>
+        <el-button size="small" :disabled="outcomeLoading || !sortedStocks.length" @click="copyDayReasons">复制当天 reason</el-button>
+      </div>
       <el-table :data="sortedStocks" v-loading="outcomeLoading" empty-text="当日没有入选股票"
         :default-sort="{ prop: '20', order: 'descending' }" @sort-change="onOutcomeSort">
         <el-table-column prop="tsCode" label="代码" width="120" />
@@ -100,6 +103,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getJson } from '../api.js'
 import { createLimitChartOption, createMainForceChartOption } from '../utils/limit-chart.js'
 
@@ -181,6 +185,30 @@ function pctClass(value) {
 
 function onOutcomeSort({ prop, order }) {
   outcomeSort.value = order ? { prop, order } : { prop: '20', order: 'descending' }
+}
+
+function buildDayReasonText(stocks) {
+  const lines = []
+  for (const stock of stocks) {
+    const reason = stock.reason?.trim()
+    if (!reason) continue
+    lines.push(`${lines.length + 1}、${stock.name}：${reason}`)
+  }
+  return lines.join('\n\n')
+}
+
+async function copyDayReasons() {
+  const text = buildDayReasonText(sortedStocks.value)
+  if (!text) {
+    ElMessage.info('当日入选股票没有 reason')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制当天 reason')
+  } catch (err) {
+    ElMessage.error(err?.message || '复制失败')
+  }
 }
 
 async function load() {
@@ -337,5 +365,7 @@ h2 { margin: 0; font-size: 16px; }
 .wind-toolbar { margin-top: 8px; }
 .wind-filter { display: inline-flex; align-items: center; gap: 6px; }
 h3 { margin: 8px 0 0; font-size: 14px; }
+.detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detail-head h3 { margin: 0; }
 .outcome-section { display: flex; flex-direction: column; gap: 8px; }
 </style>

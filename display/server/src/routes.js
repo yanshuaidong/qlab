@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { createBlockTradeRouter } from './block-trade-routes.js'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
 import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
@@ -218,6 +219,7 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
     next()
   })
 
+  router.use('/block-trade', createBlockTradeRouter())
   router.use('/reason-vector', createReasonVectorRouter(vectors))
 
   router.get('/meta', (req, res) => {
