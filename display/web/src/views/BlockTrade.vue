@@ -31,11 +31,47 @@
     <template v-else>
       <el-alert v-if="stocksError" :title="stocksError" type="error" :closable="false" show-icon />
       <div class="toolbar stock-toolbar">
-        <label class="toolbar-label" for="block-stock-select">选择股票</label>
-        <el-select-v2 id="block-stock-select" v-model="selectedCode" :options="stockOptions" filterable
-          :loading="stocksLoading" class="stock-select" placeholder="下拉选择，或输入股票代码 / 名称搜索"
-          aria-label="选择有过大宗交易的股票" no-match-text="没有匹配的大宗交易证券" no-data-text="暂无大宗交易证券" />
-        <span class="hint">仅列出有过大宗交易的 {{ stocks.length }} 个证券代码；无名称时显示代码。</span>
+        <label class="mv-filter">
+          <span class="toolbar-label">总市值小于</span>
+          <el-input-number v-model="maxMvYi" :min="0" :step="10" size="small" :value-on-clear="null"
+            aria-label="总市值上限（亿元）" @change="onMaxMvChange" />
+          <span class="toolbar-label">亿</span>
+        </label>
+        <div class="trade-filters">
+          <label class="trade-filter">
+            <el-switch v-model="amountOn" aria-label="启用单笔金额筛选" @change="onTradeFilterChange" />
+            <span class="toolbar-label">单笔金额</span>
+            <span class="toolbar-label">大于等于</span>
+            <el-input-number v-model="minAmountWan" :min="0" :step="100" size="small" :disabled="!amountOn"
+              :value-on-clear="null" aria-label="单笔金额下限（万元）" @change="onTradeFilterChange" />
+            <span class="toolbar-label">万</span>
+            <span class="toolbar-label">小于等于</span>
+            <el-input-number v-model="maxAmountWan" :min="0" :step="100" size="small" :disabled="!amountOn"
+              :value-on-clear="null" aria-label="单笔金额上限（万元）" @change="onTradeFilterChange" />
+            <span class="toolbar-label">万</span>
+          </label>
+          <label class="trade-filter">
+            <el-switch v-model="discountOn" aria-label="启用折价率筛选" @change="onTradeFilterChange" />
+            <span class="toolbar-label">折价率</span>
+            <span class="toolbar-label">大于</span>
+            <el-input-number v-model="minDiscount" :step="0.5" :precision="2" size="small" :disabled="!discountOn"
+              :value-on-clear="null" aria-label="折价率下限（%）" @change="onTradeFilterChange" />
+            <span class="toolbar-label">%</span>
+            <span class="toolbar-label">小于</span>
+            <el-input-number v-model="maxDiscount" :step="0.5" :precision="2" size="small" :disabled="!discountOn"
+              :value-on-clear="null" aria-label="折价率上限（%）" @change="onTradeFilterChange" />
+            <span class="toolbar-label">%</span>
+          </label>
+        </div>
+        <div class="stock-nav">
+          <el-button size="small" :disabled="!canPrev" @click="goStock(-1)">上一个</el-button>
+          <el-select-v2 id="block-stock-select" v-model="selectedCode" :options="stockOptions" filterable
+            :loading="stocksLoading" class="stock-select" placeholder="代码或名称"
+            aria-label="选择有过大宗交易的股票" no-match-text="没有匹配的大宗交易证券" no-data-text="暂无大宗交易证券" />
+          <el-button size="small" :disabled="!canNext" @click="goStock(1)">下一个</el-button>
+          <span v-if="stockIndex >= 0" class="hint stock-pos">{{ stockIndex + 1 }} / {{ stocks.length }}</span>
+        </div>
+        <span class="hint">{{ stockListHint }}</span>
       </div>
       <el-alert v-if="stockError" :title="stockError" type="error" :closable="false" show-icon>
         <el-button size="small" @click="loadStock">重试个股数据</el-button>
@@ -44,7 +80,8 @@
         <template v-if="stockData && !stockError">
           <div class="stock-summary">
             <h2>{{ selectedStock?.name || '名称暂无' }} <span class="hint">{{ selectedCode }}</span></h2>
-            <span>{{ stockData.rows.length }} 笔成交 · {{ model.byDate.size }} 个成交日</span>
+            <span>{{ Number.isFinite(selectedStock?.total_mv) ? `总市值 ${formatMv(selectedStock.total_mv)}` : '市值未知' }}</span>
+            <span>{{ stockData.rows.length }} 笔{{ tradeFilterActive ? '符合筛选的' : '' }}成交 · {{ model.byDate.size }} 个成交日</span>
             <span class="hint">行情截至 {{ lastDailyDate || '暂无行情' }} · 大宗交易截至 {{ eventDates[0] || '—' }}</span>
           </div>
           <el-alert v-if="model.missingDates.length" type="warning" :closable="false" show-icon
@@ -54,8 +91,10 @@
               <h2>{{ model.dailyByDate.size ? '未复权日 K 线 · 大宗交易标注' : '大宗交易笔数 · 暂无 K 线行情' }}</h2>
               <div class="chart-actions">
                 <el-checkbox v-model="showLabels">显示折溢价文字</el-checkbox>
-                <el-button size="small" @click="focusSelected">定位所选日期</el-button>
-                <el-button size="small" @click="showAll">查看全部</el-button>
+                <el-radio-group v-model="viewMode" size="small" aria-label="K线查看范围" @change="applyView">
+                  <el-radio-button value="all">查看全部</el-radio-button>
+                  <el-radio-button value="date">定位所在日期</el-radio-button>
+                </el-radio-group>
               </div>
             </div>
             <div class="marker-legend">
@@ -76,7 +115,7 @@
             <p class="hint chart-guide">{{ model.dailyByDate.size ? '上图看价格与折溢价标注，下图看大宗交易笔数；点击任一天 K 线或成交柱，下方表格展示该日全部明细。' : '当前仅有成交记录，暂无可绘制的 K 线；点击成交柱或选择日期查看当日明细。' }}</p>
             <div class="block-kline-stage">
               <ChartPane v-if="model.dates.length" ref="chartRef" :series="klineSeries" :pane-stretch="model.dailyByDate.size ? [4, 1] : [1]"
-                :fit-token="selectedCode" @ready="focusSelected" @hover="onHover" @click="selectChartDay" />
+                :fit-token="selectedCode" @ready="applyView" @hover="onHover" @click="selectChartDay" />
               <el-empty v-else description="暂无行情或成交数据" />
             </div>
           </div>
@@ -84,14 +123,14 @@
           <div class="panel detail-panel">
             <div class="panel-heading">
               <h2>成交明细 <span class="hint">{{ selectedDate || '请选择日期' }} · {{ selectedTrades.length }} 笔</span></h2>
-              <el-select v-model="selectedDate" class="date-select" aria-label="选择大宗成交日期" placeholder="选择成交日期" @change="focusSelected">
+              <el-select v-model="selectedDate" class="date-select" aria-label="选择大宗成交日期" placeholder="选择成交日期" @change="onSelectedDateChange">
                 <el-option v-if="selectedDate && !model.byDate.has(selectedDate)" :label="`${selectedDate} · 无大宗交易`" :value="selectedDate" />
                 <el-option v-for="date in eventDates" :key="date" :value="date"
                   :label="`${date} · ${model.byDate.get(date).length} 笔${model.dailyByDate.has(date) ? '' : ' · 缺 K 线'}`" />
               </el-select>
             </div>
             <el-table :data="pagedTrades" :row-key="rowKey" stripe :max-height="440"
-              :empty-text="selectedDate ? '该日期没有已入库的大宗交易记录' : '点击 K 线或选择成交日期查看明细'">
+              :empty-text="selectedDate ? '该日期没有符合筛选的大宗交易记录' : '点击 K 线或选择成交日期查看明细'">
               <el-table-column prop="record_no" label="当日序号" width="90" />
               <el-table-column prop="trade_date" label="成交日期" width="115" />
               <el-table-column prop="ts_code" label="代码" width="110" />
@@ -99,18 +138,18 @@
               <el-table-column label="当日收盘价" width="110" align="right"><template #default="{ row }">{{ formatPrice(row.close) }}</template></el-table-column>
               <el-table-column label="折溢价" width="140" align="right"><template #default="{ row }"><span :class="premiumKind(row.premium_rate)">{{ premiumLabel(row.premium_rate) }}</span></template></el-table-column>
               <el-table-column label="成交量（万股）" width="140" align="right"><template #default="{ row }">{{ formatNumber(row.vol, 4) }}</template></el-table-column>
-              <el-table-column label="成交金额（原值）" width="155" align="right"><template #default="{ row }">{{ formatNumber(row.amount, 4) }}</template></el-table-column>
+              <el-table-column label="成交金额（万元）" width="155" align="right"><template #default="{ row }">{{ formatNumber(row.amount, 4) }}</template></el-table-column>
               <el-table-column prop="buyer" label="买方营业部" min-width="240" show-overflow-tooltip />
               <el-table-column prop="seller" label="卖方营业部" min-width="240" show-overflow-tooltip />
             </el-table>
             <div class="table-footer">
-              <span class="hint">相同明细也逐笔保留。金额按接口原值显示，原文档未标明金额单位。</span>
+              <span class="hint">相同明细也逐笔保留。成交金额单位为万元。折价率相对当日未复权收盘价；筛选开启后，缺少收盘价或成交价的记录不计入。</span>
               <el-pagination v-if="selectedTrades.length > pageSize" v-model:current-page="detailPage" :page-size="pageSize"
                 :total="selectedTrades.length" layout="prev, pager, next, total" small />
             </div>
           </div>
         </template>
-        <el-empty v-else-if="!stockLoading && !stockError" description="请选择一只有过大宗交易的股票" />
+        <el-empty v-else-if="!stockLoading && !stockError" :description="emptyStockText" />
       </div>
     </template>
   </section>
@@ -129,7 +168,17 @@ const overviewError = ref('')
 const stocks = ref([])
 const stocksLoading = ref(false)
 const stocksError = ref('')
+const DEFAULT_MAX_MV_YI = 100
 const selectedCode = ref('')
+const maxMvYi = ref(DEFAULT_MAX_MV_YI)
+const amountOn = ref(true)
+const minAmountWan = ref(2000)
+const maxAmountWan = ref(null)
+const discountOn = ref(true)
+const minDiscount = ref(3)
+const maxDiscount = ref(8)
+const mvAvailable = ref(true)
+const viewMode = ref('all')
 const stockData = ref(null)
 const stockLoading = ref(false)
 const stockError = ref('')
@@ -143,8 +192,42 @@ let overviewController, stocksController, stockController
 
 const overviewOption = computed(() => createBlockOverviewOption(overview.value?.rows || []))
 const stockOptions = computed(() => stocks.value.map(stock => ({ value: stock.ts_code,
-  label: `${stock.ts_code} ${stock.name || '名称暂无'} · ${stock.count} 笔`,
+  label: `${stock.ts_code} ${stock.name || '名称暂无'} · ${formatMv(stock.total_mv)} · ${stock.count} 笔`,
 })))
+const stockIndex = computed(() => stocks.value.findIndex(stock => stock.ts_code === selectedCode.value))
+const canPrev = computed(() => stockIndex.value > 0 && !stocksLoading.value)
+const canNext = computed(() => stockIndex.value >= 0 && stockIndex.value < stocks.value.length - 1 && !stocksLoading.value)
+const tradeFilterText = computed(() => {
+  const parts = []
+  if (amountOn.value) {
+    const bits = []
+    if (minAmountWan.value != null) bits.push(`大于等于 ${minAmountWan.value} 万`)
+    if (maxAmountWan.value != null) bits.push(`小于等于 ${maxAmountWan.value} 万`)
+    parts.push(bits.length ? `单笔金额${bits.join('、')}` : '单笔金额不限')
+  }
+  if (discountOn.value) {
+    const bits = []
+    if (minDiscount.value != null) bits.push(`大于 ${minDiscount.value}%`)
+    if (maxDiscount.value != null) bits.push(`小于 ${maxDiscount.value}%`)
+    parts.push(bits.length ? `折价率${bits.join('、')}` : '折价率不限')
+  }
+  return parts.join('；')
+})
+const tradeFilterActive = computed(() => amountOn.value || discountOn.value)
+const stockListHint = computed(() => {
+  const count = `${stocks.value.length} 只`
+  const trade = tradeFilterText.value ? `；${tradeFilterText.value}` : ''
+  const omitted = tradeFilterActive.value ? '。没有市值或不满足成交条件的不列入；笔数为符合条件的成交' : '；没有市值的不列入'
+  if (!mvAvailable.value) return `共 ${count}有过大宗交易的证券；库内没有市值，未按市值筛选${trade}`
+  if (maxMvYi.value == null) return `共 ${count}有过大宗交易的证券，不限市值${trade}；无名称时显示代码`
+  return `共 ${count}，最新总市值小于 ${maxMvYi.value} 亿${trade}${omitted}`
+})
+const emptyStockText = computed(() => {
+  if (stocks.value.length) return '请选择一只有过大宗交易的股票'
+  if (tradeFilterText.value) return `没有同时满足市值和成交条件的证券（${tradeFilterText.value}）`
+  if (maxMvYi.value == null) return '暂无大宗交易证券'
+  return `没有总市值小于 ${maxMvYi.value} 亿的大宗交易证券`
+})
 const selectedStock = computed(() => stocks.value.find(stock => stock.ts_code === selectedCode.value))
 const model = computed(() => buildBlockTradeKline(stockData.value?.daily || [], stockData.value?.rows || [], showLabels.value))
 const eventDates = computed(() => [...model.value.byDate.keys()].sort().reverse())
@@ -173,10 +256,22 @@ const klineSeries = computed(() => {
 })
 
 function rowKey(row) { return `${row.trade_date}-${row.record_no}` }
+function formatMv(totalMvWan) {
+  if (!Number.isFinite(totalMvWan)) return '市值未知'
+  const yi = totalMvWan / 10000
+  const text = yi >= 100 ? String(Math.round(yi)) : yi.toFixed(2).replace(/\.?0+$/, '')
+  return `${text} 亿`
+}
 function onHover(event) { hoverDate.value = toTradeDate(event?.time) }
 function selectChartDay(event) {
   const date = toTradeDate(event?.time)
-  if (date) { selectedDate.value = date; hoverDate.value = '' }
+  if (!date) return
+  selectedDate.value = date
+  hoverDate.value = ''
+  if (viewMode.value === 'date') focusSelected()
+}
+function onSelectedDateChange() {
+  if (viewMode.value === 'date') focusSelected()
 }
 async function focusSelected() {
   await nextTick()
@@ -185,6 +280,63 @@ async function focusSelected() {
   chartRef.value?.getChart()?.timeScale().setVisibleLogicalRange({ from: Math.max(-1, index - 45), to: Math.min(model.value.dates.length + 2, index + 25) })
 }
 function showAll() { chartRef.value?.getChart()?.timeScale().fitContent() }
+function applyView() {
+  if (viewMode.value === 'date') focusSelected()
+  else showAll()
+}
+function goStock(delta) {
+  const next = stocks.value[stockIndex.value + delta]
+  if (next) selectedCode.value = next.ts_code
+}
+function normalizeMaxMvYi(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_MAX_MV_YI
+  return n
+}
+function onMaxMvChange() {
+  maxMvYi.value = normalizeMaxMvYi(maxMvYi.value)
+  loadStocks()
+}
+function normalizeOptional(value, { min = null } = {}) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || (min != null && n < min)) return null
+  return n
+}
+function tradeFilterError() {
+  minAmountWan.value = normalizeOptional(minAmountWan.value, { min: 0 })
+  maxAmountWan.value = normalizeOptional(maxAmountWan.value, { min: 0 })
+  minDiscount.value = normalizeOptional(minDiscount.value)
+  maxDiscount.value = normalizeOptional(maxDiscount.value)
+  if (amountOn.value && minAmountWan.value != null && maxAmountWan.value != null && minAmountWan.value > maxAmountWan.value) {
+    return '单笔金额的大于等于不能高于小于等于'
+  }
+  if (discountOn.value && minDiscount.value != null && maxDiscount.value != null && minDiscount.value >= maxDiscount.value) {
+    return '折价率下限必须小于上限'
+  }
+  return ''
+}
+function appendTradeFilters(params) {
+  if (amountOn.value) {
+    if (minAmountWan.value != null) params.set('minAmountWan', String(minAmountWan.value))
+    if (maxAmountWan.value != null) params.set('maxAmountWan', String(maxAmountWan.value))
+  }
+  if (discountOn.value) {
+    if (minDiscount.value != null) params.set('minDiscount', String(minDiscount.value))
+    if (maxDiscount.value != null) params.set('maxDiscount', String(maxDiscount.value))
+  }
+}
+async function onTradeFilterChange() {
+  const message = tradeFilterError()
+  if (message) {
+    stocksError.value = message
+    return
+  }
+  const previous = selectedCode.value
+  await loadStocks()
+  if (selectedCode.value && selectedCode.value === previous) loadStock()
+}
 async function loadOverview() {
   overviewController?.abort()
   const request = new AbortController()
@@ -205,8 +357,18 @@ async function loadStocks() {
   stocksLoading.value = true
   stocksError.value = ''
   try {
-    const result = await getJson('/api/block-trade/stocks', { signal: request.signal })
+    const message = tradeFilterError()
+    if (message) {
+      stocksError.value = message
+      stocksLoading.value = false
+      return
+    }
+    const params = new URLSearchParams()
+    if (maxMvYi.value != null) params.set('maxMvYi', String(maxMvYi.value))
+    appendTradeFilters(params)
+    const result = await getJson(`/api/block-trade/stocks?${params}`, { signal: request.signal })
     if (request.signal.aborted) return
+    mvAvailable.value = result.mv_available !== false
     stocks.value = result.items || []
     if (!stocks.value.some(row => row.ts_code === selectedCode.value)) {
       selectedCode.value = (stocks.value.find(row => row.name) || stocks.value[0])?.ts_code || ''
@@ -226,7 +388,10 @@ async function loadStock() {
   if (!selectedCode.value) return
   stockLoading.value = true
   try {
-    const result = await getJson(`/api/block-trade/stock/${encodeURIComponent(selectedCode.value)}`, { signal: request.signal })
+    const params = new URLSearchParams()
+    appendTradeFilters(params)
+    const query = params.toString()
+    const result = await getJson(`/api/block-trade/stock/${encodeURIComponent(selectedCode.value)}${query ? `?${query}` : ''}`, { signal: request.signal })
     if (request.signal.aborted) return
     stockData.value = result
     selectedDate.value = eventDates.value[0] || ''
@@ -258,13 +423,19 @@ p { margin: 12px 0; line-height: 1.7; }
 .panel-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
 .overview-chart { height: max(380px, 52vh); }
 .stock-toolbar { margin-bottom: 16px; }
-.stock-select { width: 420px; max-width: 100%; }
+.mv-filter, .trade-filter { display: inline-flex; align-items: center; gap: 8px; }
+.mv-filter :deep(.el-input-number) { width: 118px; }
+.trade-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; flex: 1 1 100%; }
+.trade-filter :deep(.el-input-number) { width: 118px; }
+.stock-nav { display: flex; align-items: center; gap: 8px; flex: 1 1 480px; min-width: min(100%, 320px); }
+.stock-select { flex: 1; width: auto; min-width: 180px; }
+.stock-pos { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stock-body { min-height: 260px; }
 .stock-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 14px; font-size: 13px; }
 .stock-summary h2 { font-size: 18px; }
 .kline-panel { margin-top: 14px; }
 .chart-actions { display: flex; align-items: center; gap: 12px; }
-.chart-actions .el-button + .el-button { margin-left: 0; }
+.chart-actions :deep(.el-radio-button__inner) { padding: 5px 12px; }
 .marker-legend { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 16px; font-size: 12px; }
 .premium { color: #fd4432; } .discount { color: #2fa331; } .flat { color: #e5bf65; } .unknown { color: #8b95a8; } .mixed { color: #be8cf0; }
 .candle-info { display: flex; flex-wrap: wrap; gap: 6px 14px; min-height: 34px; margin: 12px 16px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
