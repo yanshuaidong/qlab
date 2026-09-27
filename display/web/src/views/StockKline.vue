@@ -2,147 +2,37 @@
   <section class="page kline-page">
     <div class="chart-wrap kline-stage">
       <ChartPane
-        ref="chartPaneRef"
         :series="chartSeries"
         :price-scales="priceScales"
         :pane-stretch="paneStretch"
         :fit-token="fitToken"
-        @ready="onChartReady"
         @click="onChartClick"
         @hover="onChartHover"
       />
       <div class="kline-overlays" :style="overlayGridStyle">
         <div class="overlay-pane overlay-sub overlay-main">
-          <div class="phase-band-layer">
-            <div
-              v-for="(band, index) in overlayBands"
-              :key="index"
-              class="phase-band"
-              :style="band.style"
-            />
-          </div>
+          <div class="kline-main-meta">
           <div class="pane-heading">
             <span class="pane-title" :class="{ 'is-error': !!error }">
-              {{ error || stockTitle }}
+              <span>{{ error || stockTitle }}</span>
               <span v-if="!error && marketCapText" class="pane-mv">{{ marketCapText }}</span>
-            </span>
-            <button
-              type="button"
-              class="kline-nav-btn"
-              :disabled="!canSwitchStock"
-              @click="goNeighbor(-1)"
-            >
-              上一个
-            </button>
-            <button
-              type="button"
-              class="kline-nav-btn"
-              :disabled="!canSwitchStock"
-              @click="goNeighbor(1)"
-            >
-              下一个
-            </button>
-            <span v-if="phaseMethod" class="phase-legend">
-              <span class="phase-swatch is-down">下跌</span>
-              <span class="phase-swatch is-flat">震荡</span>
-              <span class="phase-swatch is-up">上涨</span>
+              <span v-if="!error && hoverStats" class="kline-legend">
+                <span>{{ hoverStats.date }}</span>
+                <span>开 <b>{{ hoverStats.open }}</b></span>
+                <span>高 <b>{{ hoverStats.high }}</b></span>
+                <span>低 <b>{{ hoverStats.low }}</b></span>
+                <span :class="hoverStats.cls">
+                  收 <b>{{ hoverStats.close }}</b>
+                </span>
+                <span :class="hoverStats.cls">
+                  {{ hoverStats.change }} {{ hoverStats.pct }}
+                </span>
+                <span>振幅 {{ hoverStats.amp }}</span>
+                <span>量 {{ hoverStats.vol }}</span>
+                <span>额 {{ hoverStats.amount }}</span>
+              </span>
             </span>
           </div>
-          <div v-if="hoverStats" class="kline-legend">
-            <span>{{ hoverStats.date }}</span>
-            <span>开 <b>{{ hoverStats.open }}</b></span>
-            <span>高 <b>{{ hoverStats.high }}</b></span>
-            <span>低 <b>{{ hoverStats.low }}</b></span>
-            <span :class="hoverStats.cls">
-              收 <b>{{ hoverStats.close }}</b>
-            </span>
-            <span :class="hoverStats.cls">
-              {{ hoverStats.change }} {{ hoverStats.pct }}
-            </span>
-            <span>振幅 {{ hoverStats.amp }}</span>
-            <span>量 {{ hoverStats.vol }}</span>
-            <span>额 {{ hoverStats.amount }}</span>
-            <span
-              v-if="hoverStats.phase"
-              class="phase-tag"
-              :class="hoverStats.phaseClass"
-            >
-              {{ hoverStats.phase }}
-            </span>
-          </div>
-          <div class="pane-metric kline-stock-tools">
-            <el-select
-              v-model="phaseMethod"
-              class="kline-phase-select"
-              size="small"
-              :teleported="true"
-            >
-              <el-option
-                v-for="item in PHASE_METHODS"
-                :key="item.value || 'off'"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-            <el-select
-              v-model="stockScope"
-              class="kline-scope-select"
-              size="small"
-              :teleported="true"
-              @change="onStockScopeChange"
-            >
-              <el-option
-                v-for="item in STOCK_SCOPES"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-            <label class="kline-mv-filter">
-              <span>大于等于</span>
-              <el-input
-                v-model="minMvYi"
-                class="kline-mv-input"
-                size="small"
-                type="number"
-                min="0"
-                step="any"
-                @change="onMvRangeChange"
-              />
-              <span>亿</span>
-            </label>
-            <label class="kline-mv-filter">
-              <span>小于等于</span>
-              <el-input
-                v-model="maxMvYi"
-                class="kline-mv-input"
-                size="small"
-                type="number"
-                min="0"
-                step="any"
-                placeholder="不限"
-                @change="onMvRangeChange"
-              />
-              <span>亿</span>
-            </label>
-            <el-select-v2
-              v-model="selectedCode"
-              class="kline-search"
-              size="small"
-              filterable
-              :options="stockOptions"
-              :teleported="true"
-              placeholder="搜索或下拉选股"
-              popper-class="kline-stock-popper"
-              @change="onStockChange"
-            >
-              <template #default="{ item }">
-                <div class="stock-option">
-                  <span class="code">{{ item.ts_code }}</span>
-                  <span>{{ item.name }}</span>
-                </div>
-              </template>
-            </el-select-v2>
           </div>
         </div>
         <div
@@ -177,76 +67,299 @@
           </el-select>
         </div>
       </div>
-    </div>
-    <div
-      class="fail-all-fab"
-      :class="{ 'is-dragging': fabDragging, 'is-disabled': !canFailAll }"
-      :style="fabStyle"
-    >
-      <button
-        type="button"
-        class="fail-all-fab__action"
-        :disabled="!canFailAll"
-        @click="failAllCorrect"
-      >
-        {{ failAllLabel }}
-      </button>
-      <div
-        class="fail-all-fab__handle"
-        title="拖动"
-        @pointerdown="onFabHandlePointerDown"
-        @pointermove="onFabHandlePointerMove"
-        @pointerup="onFabHandlePointerUp"
-        @pointercancel="onFabHandlePointerUp"
-      >
-        <span class="fail-all-fab__grip" aria-hidden="true" />
+      <div class="kline-dock">
+        <div class="kline-dock-bar">
+          <el-select-v2
+            v-model="selectedCode"
+            class="kline-dock-stock"
+            filterable
+            :options="stockOptions"
+            :teleported="true"
+            placeholder="搜索或下拉选股"
+            popper-class="kline-stock-popper"
+            @change="onStockChange"
+          >
+            <template #default="{ item }">
+              <div class="stock-option">
+                <span class="code">{{ item.ts_code }}</span>
+                <span>{{ item.name }}</span>
+              </div>
+            </template>
+          </el-select-v2>
+          <button
+            type="button"
+            class="kline-dock-btn"
+            :disabled="!canSwitchStock"
+            @click="goNeighbor(-1)"
+          >
+            上一个
+          </button>
+          <button
+            type="button"
+            class="kline-dock-btn"
+            :disabled="!canSwitchStock"
+            @click="goNeighbor(1)"
+          >
+            下一个
+          </button>
+          <button
+            type="button"
+            class="kline-dock-btn"
+            :class="{ 'is-on': settingsOpen }"
+            :aria-pressed="settingsOpen"
+            aria-controls="kline-settings-panel"
+            @click="settingsOpen = !settingsOpen"
+          >
+            设置
+          </button>
+        </div>
+        <div
+          v-show="settingsOpen"
+          id="kline-settings-panel"
+          class="kline-dock-panel"
+        >
+          <article class="kline-filter-card" :class="{ 'is-off': !mvFilterEnabled }">
+              <header class="kline-filter-card__head">
+                <span class="kline-filter-card__name">最近日市值</span>
+                <el-switch v-model="mvFilterEnabled" size="small" />
+              </header>
+              <div class="kline-filter-card__body">
+                <label class="kline-filter-row">
+                  <span>大于等于</span>
+                  <el-input
+                    v-model="minMvYi"
+                    class="kline-mv-input"
+                    size="small"
+                    type="number"
+                    min="0"
+                    step="any"
+                    :disabled="!mvFilterEnabled"
+                  />
+                  <span>亿</span>
+                </label>
+                <label class="kline-filter-row">
+                  <span>小于等于</span>
+                  <el-input
+                    v-model="maxMvYi"
+                    class="kline-mv-input"
+                    size="small"
+                    type="number"
+                    min="0"
+                    step="any"
+                    :disabled="!mvFilterEnabled"
+                  />
+                  <span>亿</span>
+                </label>
+              </div>
+          </article>
+          <article class="kline-filter-card" :class="{ 'is-off': !hmFilterEnabled }">
+            <header class="kline-filter-card__head">
+              <span class="kline-filter-card__name">有游资操作记录的</span>
+              <el-switch v-model="hmFilterEnabled" size="small" @change="onHmFilterChange" />
+            </header>
+            <div class="kline-filter-card__body">
+              <el-select
+                v-model="hmName"
+                class="kline-hm-select"
+                size="small"
+                filterable
+                :disabled="!hmFilterEnabled"
+                :teleported="true"
+                placeholder="全部游资"
+                @change="onHmNameChange"
+              >
+                <el-option label="全部游资" value="" />
+                <el-option
+                  v-for="item in hmNames"
+                  :key="item.name"
+                  :label="hmOptionLabel(item)"
+                  :value="item.name"
+                />
+              </el-select>
+            </div>
+          </article>
+          <article class="kline-filter-card">
+            <header class="kline-filter-card__head">
+              <span class="kline-filter-card__name">在K线上标记游资</span>
+              <el-switch v-model="showHmMarks" size="small" @change="onShowHmMarksChange" />
+            </header>
+            <p class="kline-filter-note">开启后，有游资操作的K线上显示蓝色「游」。选中具体游资时，该游资当天改为橙色名称。此开关不筛选股票。</p>
+          </article>
+          <article class="kline-filter-card">
+            <header class="kline-filter-card__head">
+              <span class="kline-filter-card__name">在K线上标记大宗交易</span>
+              <el-switch v-model="showBlockMarks" size="small" @change="onShowBlockMarksChange" />
+            </header>
+            <p class="kline-filter-note">开启后，有大宗交易的K线上显示紫色「宗」。同一天还有「游」时，「宗」叠在「游」上方。此开关不筛选股票。</p>
+          </article>
+        </div>
       </div>
     </div>
     <el-dialog
-      v-model="markDialog.visible"
-      title="标记"
-      width="440px"
+      v-model="dayDialog.visible"
+      :title="dayDialogTitle"
+      width="880px"
       append-to-body
       align-center
+      class="kline-day-dialog"
     >
-      <p class="mark-date">交易日：{{ markDialog.tradeDate }}</p>
-      <el-radio-group v-model="markDialog.markType" class="mark-type-group">
-        <el-radio value="correct" class="mark-type-correct">正确点</el-radio>
-        <el-radio value="fail" class="mark-type-fail">失败点</el-radio>
-      </el-radio-group>
-      <el-input
-        v-model="markDialog.reason"
-        class="mark-reason"
-        type="textarea"
-        :rows="3"
-        :placeholder="markReasonPlaceholder"
-        maxlength="500"
-        show-word-limit
-      />
-      <p v-if="markDialog.existing" class="hint mark-hint">
-        当前已标记为「{{ markTypeLabel(markDialog.existing.mark_type) }}」，可改类型、原因或删除。
-      </p>
-      <template #footer>
-        <el-button
-          v-if="markDialog.existing"
-          type="danger"
-          plain
-          :loading="markDialog.saving"
-          @click="removeMark"
-        >
-          删除
-        </el-button>
-        <el-button @click="markDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="markDialog.saving" @click="saveMark">
-          确定
-        </el-button>
-      </template>
+      <div class="kline-day">
+        <nav class="kline-day__nav" aria-label="当天详情">
+          <button
+            type="button"
+            :class="{ 'is-on': dayDialog.panel === 'mark' }"
+            @click="dayDialog.panel = 'mark'"
+          >
+            原因标记
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-on': dayDialog.panel === 'hm' }"
+            @click="dayDialog.panel = 'hm'"
+          >
+            游资详情
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-on': dayDialog.panel === 'block' }"
+            @click="dayDialog.panel = 'block'"
+          >
+            大宗交易
+          </button>
+        </nav>
+        <section v-if="dayDialog.panel === 'mark'" class="kline-day__main">
+          <h3>原因标记</h3>
+          <el-radio-group v-model="dayDialog.markType" class="mark-type-group">
+            <el-radio value="correct" class="mark-type-correct">正确点</el-radio>
+            <el-radio value="fail" class="mark-type-fail">失败点</el-radio>
+          </el-radio-group>
+          <el-input
+            v-model="dayDialog.reason"
+            class="mark-reason"
+            type="textarea"
+            :rows="4"
+            :placeholder="markReasonPlaceholder"
+            maxlength="500"
+            show-word-limit
+          />
+          <p v-if="dayDialog.existing" class="hint mark-hint">
+            当前已标记为「{{ markTypeLabel(dayDialog.existing.mark_type) }}」
+            <template v-if="dayDialog.existing.reason">：{{ dayDialog.existing.reason }}</template>
+          </p>
+          <p v-else class="hint mark-hint">当日还没有原因标记。</p>
+          <div class="kline-day-actions">
+            <el-button
+              v-if="dayDialog.existing"
+              type="danger"
+              plain
+              :loading="dayDialog.saving"
+              @click="removeMark"
+            >
+              删除
+            </el-button>
+            <el-button type="primary" :loading="dayDialog.saving" @click="saveMark">
+              确定
+            </el-button>
+          </div>
+        </section>
+        <section v-else-if="dayDialog.panel === 'hm'" class="kline-day__main">
+          <h3>游资详情</h3>
+          <p v-if="!dayHmGroups.length" class="hint">当日没有游资操作。</p>
+          <div v-else class="kline-hm-body">
+            <ul class="kline-hm-list">
+              <li v-for="group in dayHmGroups" :key="group.name">
+                <button
+                  type="button"
+                  class="kline-hm-item"
+                  :class="{ 'is-on': group.name === activeHmName }"
+                  @click="dayDialog.focusName = group.name"
+                >
+                  <span class="kline-hm-item__name">{{ group.name }}</span>
+                  <span class="kline-hm-item__meta">
+                    <b :class="pctClass(group.net)">{{ formatSignedAmount(group.net) }}</b>
+                    <span>{{ group.rows.length }} 笔</span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+            <div v-if="activeHmGroup" class="kline-hm-detail">
+              <header class="kline-op-head">
+                <span>{{ activeHmGroup.name }}</span>
+                <b :class="pctClass(activeHmGroup.net)">{{ formatSignedAmount(activeHmGroup.net) }}</b>
+              </header>
+              <article
+                v-for="row in activeHmGroup.rows"
+                :key="row.record_no"
+                class="kline-op"
+              >
+                <div class="kline-op__amounts">
+                  <span>买入 <b>{{ formatAmount(row.buy_amount, '元') }}</b></span>
+                  <span>卖出 <b>{{ formatAmount(row.sell_amount, '元') }}</b></span>
+                  <span>
+                    净买卖
+                    <b :class="pctClass(row.net_amount)">{{ formatSignedAmount(row.net_amount) }}</b>
+                  </span>
+                </div>
+                <p v-if="row.tag" class="kline-op__tag">{{ row.tag }}</p>
+                <p class="kline-op__orgs">{{ row.hm_orgs || '没有关联机构' }}</p>
+              </article>
+            </div>
+          </div>
+        </section>
+        <section v-else class="kline-day__main">
+          <h3>
+            大宗交易
+            <span v-if="dayBlockTrades.length" class="hint">
+              {{ dayBlockTrades.length }} 笔 · 合计 {{ formatAmount(dayBlockAmount, '万元') }}
+            </span>
+          </h3>
+          <p v-if="!dayBlockTrades.length" class="hint">当日没有大宗交易。</p>
+          <div v-else class="kline-hm-body">
+            <ul class="kline-hm-list">
+              <li v-for="(row, index) in dayBlockTrades" :key="row.record_no">
+                <button
+                  type="button"
+                  class="kline-hm-item"
+                  :class="{ 'is-on': row.record_no === activeBlockRecord }"
+                  @click="dayDialog.focusRecord = row.record_no"
+                >
+                  <span class="kline-hm-item__name">{{ index + 1 }}. {{ formatBlockPrice(row.price) }}</span>
+                  <span class="kline-hm-item__meta">
+                    <b>{{ formatAmount(row.amount, '万元') }}</b>
+                    <span :class="premiumClass(row.premium_rate)">{{ premiumLabel(row.premium_rate) }}</span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+            <div v-if="activeBlockTrade" class="kline-hm-detail">
+              <header class="kline-op-head">
+                <span>第 {{ activeBlockIndex + 1 }} 笔</span>
+                <b>{{ formatAmount(activeBlockTrade.amount, '万元') }}</b>
+              </header>
+              <article class="kline-op">
+                <div class="kline-op__amounts">
+                  <span>成交价 <b>{{ formatBlockPrice(activeBlockTrade.price) }}</b></span>
+                  <span>收盘价 <b>{{ formatPrice(activeBlockTrade.close) }}</b></span>
+                  <span>
+                    折溢价
+                    <b :class="premiumClass(activeBlockTrade.premium_rate)">{{ premiumLabel(activeBlockTrade.premium_rate) }}</b>
+                  </span>
+                  <span>成交量 <b>{{ formatBlockVol(activeBlockTrade.vol) }}</b></span>
+                  <span>成交金额 <b>{{ formatAmount(activeBlockTrade.amount, '万元') }}</b></span>
+                </div>
+                <p class="kline-op__orgs">买方 {{ activeBlockTrade.buyer || '—' }}</p>
+                <p class="kline-op__orgs">卖方 {{ activeBlockTrade.seller || '—' }}</p>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
     </el-dialog>
   </section>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import ChartPane from '../components/ChartPane.vue'
 import {
@@ -254,6 +367,7 @@ import {
   flowColor,
   formatAmount,
   formatMarketCapYi,
+  formatNumber,
   formatPercent,
   formatPrice,
   formatSigned,
@@ -264,16 +378,28 @@ import {
   sendJson,
   toTradeDate,
 } from '../api.js'
+import { premiumKind, premiumLabel } from '../utils/block-trade-chart.js'
+import { orderCandleMarkers } from '../utils/kline-markers.js'
 
 const DEFAULT_MIN_MV_YI = 1
-const DEFAULT_MAX_MV_YI = ''
+const DEFAULT_MAX_MV_YI = 10000
 const MARK_COLOR_CORRECT = '#ffd54f'
 const MARK_COLOR_FAIL = '#ff3dce'
 const METRICS_STORAGE_KEY = 'qlab.kline.metrics'
-const FAB_POS_KEY = 'qlab.kline.failAllFab'
-const FAB_WIDTH = 148
-const FAB_HEIGHT = 40
-const FAB_MARGIN = 12
+const SETTINGS_OPEN_KEY = 'qlab.kline.settingsOpen'
+const MV_FILTER_KEY = 'qlab.kline.mvFilter'
+const HM_FILTER_KEY = 'qlab.kline.hmFilter'
+const HM_NAME_KEY = 'qlab.kline.hmName'
+const HM_MARK_KEY = 'qlab.kline.hmMarks'
+const BLOCK_MARK_KEY = 'qlab.kline.blockMarks'
+const DAY_PANEL_KEY = 'qlab.kline.dayPanel'
+const DAY_PANELS = new Set(['mark', 'hm', 'block'])
+const HM_MARK_COLOR = '#7eb6ff'
+const HM_MARK_COLOR_NAMED = '#ff9f1a'
+const BLOCK_MARK_COLOR = '#d7b3ff'
+const MARK_STACK_REASON = 0
+const MARK_STACK_HM = 1
+const MARK_STACK_BLOCK = 2
 const DEFAULT_METRICS = {
   dc: 'net_amount',
   ths: 'net_amount',
@@ -283,24 +409,6 @@ const STOCK_SCOPES = [
   { value: 'all', label: '全部' },
   { value: 'signal', label: '有信号' },
 ]
-const PHASE_METHODS = [
-  { value: '', label: '阶段关闭' },
-  { value: 'adx', label: 'ADX' },
-  { value: 'lr', label: '线性回归' },
-  { value: 'hmm', label: 'HMM' },
-]
-const PHASE_LABELS = { 0: '下跌', 1: '震荡', 2: '上涨' }
-const PHASE_COLORS = {
-  0: 'rgba(47, 163, 49, 0.28)',
-  1: 'rgba(139, 149, 168, 0.22)',
-  2: 'rgba(253, 68, 50, 0.28)',
-}
-const PHASE_CLASS = {
-  0: 'is-down',
-  1: 'is-flat',
-  2: 'is-up',
-}
-
 const DC_FIELDS = [
   { id: 'net_amount', label: '主力净流入额(万元)', kind: 'amount' },
   { id: 'net_amount_rate', label: '主力净流入占比(%)', kind: 'percent' },
@@ -345,25 +453,53 @@ const overlayGridStyle = {
   gridTemplateRows: paneStretch.map((n) => `${n}fr`).join(' '),
 }
 
-const chartPaneRef = ref(null)
-const overlayBands = ref([])
-let unsubTimeScale = null
+function readStoredBool(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === '1') return true
+    if (raw === '0') return false
+  } catch {
+    return fallback
+  }
+  return fallback
+}
+
+function readStoredText(key) {
+  try {
+    return localStorage.getItem(key) || ''
+  } catch {
+    return ''
+  }
+}
+
+function readStoredPanel() {
+  const raw = readStoredText(DAY_PANEL_KEY)
+  return DAY_PANELS.has(raw) ? raw : 'mark'
+}
+
 const selectedCode = ref('')
+const settingsOpen = ref(readStoredBool(SETTINGS_OPEN_KEY, false))
 const stockScope = ref('all')
+const mvFilterEnabled = ref(readStoredBool(MV_FILTER_KEY, true))
+const hmFilterEnabled = ref(readStoredBool(HM_FILTER_KEY, false))
+const hmName = ref(readStoredText(HM_NAME_KEY))
+const showHmMarks = ref(readStoredBool(HM_MARK_KEY, true))
+const showBlockMarks = ref(readStoredBool(BLOCK_MARK_KEY, true))
+const hmNames = ref([])
 const minMvYi = ref(DEFAULT_MIN_MV_YI)
 const maxMvYi = ref(DEFAULT_MAX_MV_YI)
 const stockOptions = ref([])
 const stock = ref(null)
 let defaultStock = null
+let appliedMvEnabled = mvFilterEnabled.value
 let appliedMinMvYi = DEFAULT_MIN_MV_YI
-let appliedMaxMvYi = null
+let appliedMaxMvYi = DEFAULT_MAX_MV_YI
 const dailyRows = ref([])
 const dcRows = ref([])
 const thsRows = ref([])
 const l2Rows = ref([])
-const phases = reactive({ adx: [], lr: [], hmm: [] })
-const phaseMethod = ref('adx')
-
+const hmRows = ref([])
+const blockRows = ref([])
 function loadStoredMetrics() {
   const next = { ...DEFAULT_METRICS }
   try {
@@ -395,16 +531,16 @@ const error = ref('')
 const loading = ref(false)
 const hoverDate = ref('')
 const marks = ref([])
-const failAllSaving = ref(false)
-const fabDragging = ref(false)
-const fabPos = reactive(loadFabPos())
-const markDialog = reactive({
+const dayDialog = reactive({
   visible: false,
   tradeDate: '',
   markType: 'correct',
   reason: '',
   existing: null,
   saving: false,
+  focusName: '',
+  focusRecord: null,
+  panel: readStoredPanel(),
 })
 let loadSeq = 0
 
@@ -446,221 +582,42 @@ function markTypeLabel(type) {
   return type === 'fail' ? '失败点' : '正确点'
 }
 
-const correctMarkCount = computed(
-  () => marks.value.filter((item) => item.mark_type === 'correct').length,
-)
-
-const canFailAll = computed(
-  () =>
-    Boolean(stock.value) &&
-    !loading.value &&
-    !failAllSaving.value &&
-    correctMarkCount.value > 0,
-)
-
-const failAllLabel = computed(() => {
-  if (failAllSaving.value) return '处理中…'
-  if (correctMarkCount.value > 0) return `全部失败 ${correctMarkCount.value}`
-  return '全部失败'
-})
-
-const fabStyle = computed(() => ({
-  left: `${fabPos.x}px`,
-  top: `${fabPos.y}px`,
-}))
-
-function defaultFabPos() {
-  if (typeof window === 'undefined') return { x: FAB_MARGIN, y: FAB_MARGIN }
-  return clampFabPos(
-    window.innerWidth - FAB_WIDTH - 24,
-    window.innerHeight - FAB_HEIGHT - 24,
-  )
-}
-
-function clampFabPos(x, y) {
-  if (typeof window === 'undefined') return { x: FAB_MARGIN, y: FAB_MARGIN }
-  const maxX = Math.max(FAB_MARGIN, window.innerWidth - FAB_WIDTH - FAB_MARGIN)
-  const maxY = Math.max(FAB_MARGIN, window.innerHeight - FAB_HEIGHT - FAB_MARGIN)
-  return {
-    x: Math.min(maxX, Math.max(FAB_MARGIN, x)),
-    y: Math.min(maxY, Math.max(FAB_MARGIN, y)),
-  }
-}
-
-function loadFabPos() {
-  try {
-    const raw = localStorage.getItem(FAB_POS_KEY)
-    if (!raw) return defaultFabPos()
-    const saved = JSON.parse(raw)
-    if (!Number.isFinite(saved?.x) || !Number.isFinite(saved?.y)) {
-      return defaultFabPos()
-    }
-    return clampFabPos(saved.x, saved.y)
-  } catch {
-    return defaultFabPos()
-  }
-}
-
-function saveFabPos() {
-  localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: fabPos.x, y: fabPos.y }))
-}
-
-function onFabResize() {
-  const next = clampFabPos(fabPos.x, fabPos.y)
-  fabPos.x = next.x
-  fabPos.y = next.y
-}
-
-let dragOffsetX = 0
-let dragOffsetY = 0
-
-function onFabHandlePointerDown(event) {
-  if (event.button != null && event.button !== 0) return
-  event.preventDefault()
-  fabDragging.value = true
-  dragOffsetX = event.clientX - fabPos.x
-  dragOffsetY = event.clientY - fabPos.y
-  event.currentTarget.setPointerCapture(event.pointerId)
-}
-
-function onFabHandlePointerMove(event) {
-  if (!fabDragging.value) return
-  const next = clampFabPos(event.clientX - dragOffsetX, event.clientY - dragOffsetY)
-  fabPos.x = next.x
-  fabPos.y = next.y
-}
-
-function onFabHandlePointerUp(event) {
-  if (!fabDragging.value) return
-  fabDragging.value = false
-  try {
-    event.currentTarget.releasePointerCapture(event.pointerId)
-  } catch {
-    /* already released */
-  }
-  saveFabPos()
-}
-
-async function failAllCorrect() {
-  if (!canFailAll.value || !stock.value) return
-  failAllSaving.value = true
-  try {
-    const data = await sendJson('/api/marks/fail-correct', 'POST', {
-      ts_code: stock.value.ts_code,
-    })
-    marks.value = data.items || []
-    markDialog.visible = false
-    const n = Number(data.updated || 0)
-    if (n > 0) ElMessage.success(`已将 ${n} 个正确点改为失败点`)
-    else ElMessage.info('当前没有正确点')
-  } catch (err) {
-    ElMessage.error(err.message)
-  } finally {
-    failAllSaving.value = false
-  }
-}
-
 const markReasonPlaceholder = computed(() =>
-  markDialog.markType === 'fail' ? '失败的原因（可选）' : '正确的原因（可选）',
+  dayDialog.markType === 'fail' ? '失败的原因（可选）' : '正确的原因（可选）',
 )
 
-function resetPhases() {
-  phases.adx = []
-  phases.lr = []
-  phases.hmm = []
-}
-
-const phaseItems = computed(() => {
-  if (!phaseMethod.value) return []
-  return phases[phaseMethod.value] || []
+const dayDialogTitle = computed(() => {
+  const name = stock.value?.name || stock.value?.ts_code || ''
+  return ['详情', name, dayDialog.tradeDate].filter(Boolean).join(' · ')
 })
 
-const phaseByDate = computed(() => indexRows(phaseItems.value))
-
-function mergePhaseBands(items) {
-  if (!items?.length) return []
-  const sorted = [...items].sort((a, b) =>
-    String(a.trade_date).localeCompare(String(b.trade_date)),
-  )
-  const bands = []
-  let from = sorted[0]
-  let to = sorted[0]
-  for (let i = 1; i < sorted.length; i += 1) {
-    const row = sorted[i]
-    if (row.phase === to.phase) {
-      to = row
-      continue
-    }
-    bands.push({
-      from: from.trade_date,
-      to: to.trade_date,
-      color: PHASE_COLORS[from.phase] || PHASE_COLORS[1],
-    })
-    from = row
-    to = row
-  }
-  bands.push({
-    from: from.trade_date,
-    to: to.trade_date,
-    color: PHASE_COLORS[from.phase] || PHASE_COLORS[1],
-  })
-  return bands
+function hmOptionLabel(item) {
+  const count = Number(item.ops) || 0
+  return `${item.name}（${count.toLocaleString('zh-CN')}）`
 }
 
-function toChartTime(value) {
-  const parts = String(value || '').split('-').map(Number)
-  if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return value
-  return { year: parts[0], month: parts[1], day: parts[2] }
+function formatSignedAmount(value) {
+  const text = formatAmount(value, '元')
+  if (text === '—' || Number(value) < 0) return text
+  if (Number(value) > 0) return `+${text}`
+  return text
 }
 
-function layoutPhaseBands() {
-  const chart = chartPaneRef.value?.getChart?.()
-  if (!chart || !phaseMethod.value) {
-    overlayBands.value = []
-    return
-  }
-  const timeScale = chart.timeScale()
-  const half = (timeScale.options().barSpacing || 6) / 2
-  const next = []
-  for (const band of mergePhaseBands(phaseItems.value)) {
-    const x1 =
-      timeScale.timeToCoordinate(toChartTime(band.from)) ??
-      timeScale.timeToCoordinate(band.from)
-    const x2 =
-      timeScale.timeToCoordinate(toChartTime(band.to)) ??
-      timeScale.timeToCoordinate(band.to)
-    if (x1 == null || x2 == null) continue
-    const left = Math.min(x1, x2) - half
-    const width = Math.abs(x2 - x1) + half * 2
-    if (width <= 0) continue
-    next.push({
-      style: {
-        left: `${left}px`,
-        width: `${width}px`,
-        background: band.color,
-      },
-    })
-  }
-  overlayBands.value = next
+function textMarks(dates, idPrefix, text, color, stack) {
+  return [...dates].map((time) => ({
+    id: `${idPrefix}-${time}`,
+    time,
+    position: 'aboveBar',
+    shape: 'circle',
+    color,
+    text,
+    size: 0,
+    stack,
+  }))
 }
-
-function onChartReady() {
-  unsubTimeScale?.()
-  const chart = chartPaneRef.value?.getChart?.()
-  if (!chart) return
-  const handler = () => layoutPhaseBands()
-  chart.timeScale().subscribeVisibleLogicalRangeChange(handler)
-  unsubTimeScale = () => {
-    chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler)
-    unsubTimeScale = null
-  }
-  layoutPhaseBands()
-}
-
-watch([phaseItems, fitToken, phaseMethod], layoutPhaseBands)
 
 function candleMarkers() {
-  return marks.value.map((item) => {
+  const reasonMarks = marks.value.map((item) => {
     const isCorrect = item.mark_type !== 'fail'
     return {
       id: String(item.id),
@@ -670,8 +627,34 @@ function candleMarkers() {
       color: isCorrect ? MARK_COLOR_CORRECT : MARK_COLOR_FAIL,
       text: isCorrect ? '正' : '败',
       size: 1.4,
+      stack: MARK_STACK_REASON,
     }
   })
+  const candleDates = new Set(dailyRows.value.map((row) => row.trade_date))
+  const markers = [...reasonMarks]
+  if (showHmMarks.value) {
+    const selectedName = hmName.value
+    const namedDates = new Set()
+    const dates = new Set()
+    for (const row of hmRows.value) {
+      if (!candleDates.has(row.trade_date)) continue
+      dates.add(row.trade_date)
+      if (selectedName && row.hm_name === selectedName) namedDates.add(row.trade_date)
+    }
+    const plainDates = [...dates].filter((time) => !namedDates.has(time))
+    markers.push(
+      ...textMarks(plainDates, 'hm', '游', HM_MARK_COLOR, MARK_STACK_HM),
+      ...textMarks(namedDates, 'hm', selectedName, HM_MARK_COLOR_NAMED, MARK_STACK_HM),
+    )
+  }
+  if (showBlockMarks.value) {
+    const dates = new Set()
+    for (const row of blockRows.value) {
+      if (candleDates.has(row.trade_date)) dates.add(row.trade_date)
+    }
+    markers.push(...textMarks(dates, 'block', '宗', BLOCK_MARK_COLOR, MARK_STACK_BLOCK))
+  }
+  return orderCandleMarkers(markers)
 }
 
 function fieldMeta(fields, id) {
@@ -702,8 +685,9 @@ const activeDaily = computed(() => {
   return dailyByDate.value[hoverDate.value] || rows[rows.length - 1]
 })
 
-const hoverStats = computed(() => {
-  const row = activeDaily.value
+const hoverStats = computed(() => quoteOf(activeDaily.value))
+
+function quoteOf(row) {
   if (!row) return null
   const change =
     row.change ??
@@ -722,10 +706,73 @@ const hoverStats = computed(() => {
     vol: formatVolume(row.vol),
     amount: formatAmount(row.amount, '千元'),
     cls: pctClass(change ?? pct),
-    phase: PHASE_LABELS[phaseByDate.value[row.trade_date]?.phase] || '',
-    phaseClass: PHASE_CLASS[phaseByDate.value[row.trade_date]?.phase] || '',
   }
+}
+
+const dayHmGroups = computed(() => {
+  const date = dayDialog.tradeDate
+  if (!date) return []
+  const groups = new Map()
+  for (const row of hmRows.value) {
+    if (row.trade_date !== date || !row.hm_name) continue
+    let group = groups.get(row.hm_name)
+    if (!group) {
+      group = { name: row.hm_name, net: 0, rows: [] }
+      groups.set(row.hm_name, group)
+    }
+    group.net += Number(row.net_amount) || 0
+    group.rows.push(row)
+  }
+  return [...groups.values()].sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
 })
+
+const activeHmGroup = computed(
+  () =>
+    dayHmGroups.value.find((group) => group.name === dayDialog.focusName) ||
+    dayHmGroups.value[0] ||
+    null,
+)
+
+const activeHmName = computed(() => activeHmGroup.value?.name || '')
+
+const dayBlockTrades = computed(() => {
+  const date = dayDialog.tradeDate
+  if (!date) return []
+  return blockRows.value.filter((row) => row.trade_date === date)
+})
+
+const dayBlockAmount = computed(() =>
+  dayBlockTrades.value.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+)
+
+const activeBlockTrade = computed(
+  () =>
+    dayBlockTrades.value.find((row) => row.record_no === dayDialog.focusRecord) ||
+    dayBlockTrades.value[0] ||
+    null,
+)
+
+const activeBlockRecord = computed(() => activeBlockTrade.value?.record_no ?? null)
+
+const activeBlockIndex = computed(() => {
+  const row = activeBlockTrade.value
+  if (!row) return 0
+  const index = dayBlockTrades.value.findIndex((item) => item.record_no === row.record_no)
+  return index < 0 ? 0 : index
+})
+
+function premiumClass(value) {
+  return ['kline-premium', premiumKind(value)]
+}
+
+function formatBlockPrice(value) {
+  return formatNumber(value, 4)
+}
+
+function formatBlockVol(value) {
+  const text = formatNumber(value, 4)
+  return text === '—' ? text : `${text} 万股`
+}
 
 const subHover = computed(() => {
   const date = activeDaily.value?.trade_date
@@ -831,27 +878,31 @@ const chartSeries = computed(() => {
   ]
 })
 
-const priceScales = {
-  right: { scaleMargins: { top: 0.08, bottom: 0.04 } },
-}
+const priceScales = computed(() => {
+  const layers = Number(showHmMarks.value) + Number(showBlockMarks.value)
+  return {
+    right: { scaleMargins: { top: 0.08 + layers * 0.045, bottom: 0.04 } },
+  }
+})
 
 async function loadStock(item) {
   const seq = ++loadSeq
   stock.value = item
   hoverDate.value = ''
-  markDialog.visible = false
+  dayDialog.visible = false
   loading.value = true
   error.value = ''
   const code = encodeURIComponent(item.ts_code)
   try {
-    const [daily, dc, ths, l2, markData, basic, phaseData] = await Promise.all([
+    const [daily, dc, ths, l2, markData, basic, hm, block] = await Promise.all([
       getJson(`/api/daily/${code}`),
       getJson(`/api/moneyflow/${code}?source=dc`),
       getJson(`/api/moneyflow/${code}?source=ths`),
       getJson(`/api/moneyflow/${code}?source=l2`),
       getJson(`/api/marks/${code}`),
       getJson(`/api/daily-basic/${code}`).catch(() => ({ item: null })),
-      getJson(`/api/phases/${code}`).catch(() => ({ adx: [], lr: [], hmm: [] })),
+      getJson(`/api/hm/detail/${code}`).catch(() => ({ rows: [] })),
+      getJson(`/api/block-trades/${code}`).catch(() => ({ rows: [] })),
     ])
     if (seq !== loadSeq) return
     stock.value = { ...item, total_mv: basic.item?.total_mv ?? null }
@@ -860,9 +911,8 @@ async function loadStock(item) {
     thsRows.value = ths.rows || []
     l2Rows.value = l2.rows || []
     marks.value = markData.items || []
-    phases.adx = phaseData.adx || []
-    phases.lr = phaseData.lr || []
-    phases.hmm = phaseData.hmm || []
+    hmRows.value = hm.rows || []
+    blockRows.value = block.rows || []
     if (!dailyRows.value.length) {
       error.value = '该代码没有日线数据'
     }
@@ -874,7 +924,8 @@ async function loadStock(item) {
     thsRows.value = []
     l2Rows.value = []
     marks.value = []
-    resetPhases()
+    hmRows.value = []
+    blockRows.value = []
     stock.value = { ...item, total_mv: null }
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -889,30 +940,50 @@ function normalizeMinMvYi(value) {
 }
 
 function normalizeMaxMvYi(value) {
-  if (value === '' || value == null) return null
+  if (value === '' || value == null) return DEFAULT_MAX_MV_YI
   const n = Number(value)
-  if (!Number.isFinite(n) || n < 0) return null
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_MAX_MV_YI
   return n
 }
 
-function listEmptyError(min, max, scope) {
-  const range =
-    max == null ? `市值大于等于 ${min} 亿` : `市值介于 ${min}～${max} 亿`
-  if (scope === 'signal') return `没有${range}的有信号股票`
-  return `没有${range}的股票`
+function emptyStockMessage() {
+  const bits = []
+  if (mvFilterEnabled.value) {
+    const max = maxMvYi.value
+    bits.push(
+      max == null
+        ? `市值大于等于 ${minMvYi.value} 亿`
+        : `市值 ${minMvYi.value}～${max} 亿`,
+    )
+  }
+  if (stockScope.value === 'signal') bits.push('有信号')
+  if (hmFilterEnabled.value) {
+    bits.push(hmName.value ? `游资「${hmName.value}」有操作` : '有游资操作记录')
+  }
+  if (!bits.length) return '没有股票'
+  return `没有${bits.join('、')}的股票`
 }
 
 async function loadStockList(preferredCode) {
+  const enabled = mvFilterEnabled.value
   const min = normalizeMinMvYi(minMvYi.value)
   const max = normalizeMaxMvYi(maxMvYi.value)
   minMvYi.value = min
-  maxMvYi.value = max == null ? '' : max
+  maxMvYi.value = max
+  appliedMvEnabled = enabled
   appliedMinMvYi = min
   appliedMaxMvYi = max
   const scope = stockScope.value
-  const params = new URLSearchParams({ minMvYi: String(min) })
-  if (max != null) params.set('maxMvYi', String(max))
+  const params = new URLSearchParams()
+  if (enabled) {
+    params.set('minMvYi', String(min))
+    params.set('maxMvYi', String(max))
+  }
   if (scope === 'signal') params.set('scope', 'signal')
+  if (hmFilterEnabled.value) {
+    params.set('hm', '1')
+    if (hmName.value) params.set('hmName', hmName.value)
+  }
   const list = await getJson(`/api/stocks?${params}`)
   stockOptions.value = (list.items || []).map(toStockOption)
   if (!stockOptions.value.length) {
@@ -923,8 +994,9 @@ async function loadStockList(preferredCode) {
     thsRows.value = []
     l2Rows.value = []
     marks.value = []
-    resetPhases()
-    error.value = listEmptyError(min, max, scope)
+    hmRows.value = []
+    blockRows.value = []
+    error.value = emptyStockMessage()
     return
   }
 
@@ -942,17 +1014,39 @@ async function loadStockList(preferredCode) {
 }
 
 const onMvRangeChange = debounce(() => {
+  const enabled = mvFilterEnabled.value
   const min = normalizeMinMvYi(minMvYi.value)
   const max = normalizeMaxMvYi(maxMvYi.value)
   minMvYi.value = min
-  maxMvYi.value = max == null ? '' : max
-  if (min === appliedMinMvYi && max === appliedMaxMvYi) return
+  maxMvYi.value = max
+  if (
+    enabled === appliedMvEnabled &&
+    min === appliedMinMvYi &&
+    max === appliedMaxMvYi
+  ) {
+    return
+  }
   loadStockList().catch((err) => {
     error.value = err.message
   })
 }, 400)
 
-watch([minMvYi, maxMvYi], () => {
+watch(settingsOpen, (value) => {
+  localStorage.setItem(SETTINGS_OPEN_KEY, value ? '1' : '0')
+})
+
+watch(
+  () => dayDialog.panel,
+  (value) => {
+    localStorage.setItem(DAY_PANEL_KEY, DAY_PANELS.has(value) ? value : 'mark')
+  },
+)
+
+watch(mvFilterEnabled, (value) => {
+  localStorage.setItem(MV_FILTER_KEY, value ? '1' : '0')
+})
+
+watch([minMvYi, maxMvYi, mvFilterEnabled], () => {
   onMvRangeChange()
 })
 
@@ -983,6 +1077,29 @@ function onChartHover(payload) {
   if (next !== hoverDate.value) hoverDate.value = next
 }
 
+function onHmFilterChange(value) {
+  localStorage.setItem(HM_FILTER_KEY, value ? '1' : '0')
+  loadStockList().catch((err) => {
+    error.value = err.message
+  })
+}
+
+function onHmNameChange(value) {
+  localStorage.setItem(HM_NAME_KEY, value || '')
+  if (!hmFilterEnabled.value) return
+  loadStockList().catch((err) => {
+    error.value = err.message
+  })
+}
+
+function onShowHmMarksChange(value) {
+  localStorage.setItem(HM_MARK_KEY, value ? '1' : '0')
+}
+
+function onShowBlockMarksChange(value) {
+  localStorage.setItem(BLOCK_MARK_KEY, value ? '1' : '0')
+}
+
 function onChartClick(payload) {
   if (payload.paneIndex !== 0 || loading.value || !stock.value) return
   const tradeDate = toTradeDate(payload.time)
@@ -991,22 +1108,30 @@ function onChartClick(payload) {
 
   const existing =
     marks.value.find((item) => item.trade_date === tradeDate) || null
-  markDialog.tradeDate = tradeDate
-  markDialog.existing = existing
-  markDialog.markType = existing ? existing.mark_type : 'correct'
-  markDialog.reason = existing?.reason || ''
-  markDialog.visible = true
+  const preferred = hmFilterEnabled.value ? hmName.value : ''
+  const dayNames = hmRows.value
+    .filter((row) => row.trade_date === tradeDate)
+    .map((row) => row.hm_name)
+  dayDialog.tradeDate = tradeDate
+  dayDialog.existing = existing
+  dayDialog.markType = existing ? existing.mark_type : 'correct'
+  dayDialog.reason = existing?.reason || ''
+  const dayBlocks = blockRows.value.filter((row) => row.trade_date === tradeDate)
+  dayDialog.focusName =
+    preferred && dayNames.includes(preferred) ? preferred : dayNames[0] || ''
+  dayDialog.focusRecord = dayBlocks[0]?.record_no ?? null
+  dayDialog.visible = true
 }
 
 async function saveMark() {
-  if (!stock.value || markDialog.saving) return
-  markDialog.saving = true
+  if (!stock.value || dayDialog.saving) return
+  dayDialog.saving = true
   try {
     const data = await sendJson('/api/marks', 'POST', {
       ts_code: stock.value.ts_code,
-      trade_date: markDialog.tradeDate,
-      mark_type: markDialog.markType,
-      reason: markDialog.reason.trim(),
+      trade_date: dayDialog.tradeDate,
+      mark_type: dayDialog.markType,
+      reason: dayDialog.reason.trim(),
     })
     const item = data.item
     const index = marks.value.findIndex(
@@ -1014,23 +1139,26 @@ async function saveMark() {
     )
     if (index >= 0) marks.value.splice(index, 1, item)
     else marks.value.push(item)
-    markDialog.visible = false
+    dayDialog.existing = item
+    dayDialog.reason = item.reason || ''
     ElMessage.success(`已标记${markTypeLabel(item.mark_type)} ${item.trade_date}`)
   } catch (err) {
     ElMessage.error(err.message)
   } finally {
-    markDialog.saving = false
+    dayDialog.saving = false
   }
 }
 
 async function removeMark() {
-  const existing = markDialog.existing
-  if (!existing || markDialog.saving) return
-  markDialog.saving = true
+  const existing = dayDialog.existing
+  if (!existing || dayDialog.saving) return
+  dayDialog.saving = true
   try {
     await sendJson(`/api/marks/${existing.id}`, 'DELETE')
     marks.value = marks.value.filter((item) => item.id !== existing.id)
-    markDialog.visible = false
+    dayDialog.existing = null
+    dayDialog.markType = 'correct'
+    dayDialog.reason = ''
     ElMessage.success(`已删除 ${existing.trade_date} 的标记`)
     if (stockScope.value === 'signal' && marks.value.length === 0) {
       await loadStockList()
@@ -1038,20 +1166,21 @@ async function removeMark() {
   } catch (err) {
     ElMessage.error(err.message)
   } finally {
-    markDialog.saving = false
+    dayDialog.saving = false
   }
 }
 
-onBeforeUnmount(() => {
-  unsubTimeScale?.()
-  window.removeEventListener('resize', onFabResize)
-})
-
 onMounted(async () => {
-  Object.assign(fabPos, loadFabPos())
-  window.addEventListener('resize', onFabResize)
   try {
-    const meta = await getJson('/api/meta')
+    const [meta, names] = await Promise.all([
+      getJson('/api/meta'),
+      getJson('/api/hm/names').catch(() => ({ items: [] })),
+    ])
+    hmNames.value = names.items || []
+    if (hmName.value && !hmNames.value.some((item) => item.name === hmName.value)) {
+      hmName.value = ''
+      localStorage.setItem(HM_NAME_KEY, '')
+    }
     defaultStock = meta.defaultStock || null
     await loadStockList(defaultStock?.ts_code)
   } catch (err) {

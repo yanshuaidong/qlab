@@ -141,6 +141,21 @@ function isTradeDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+function readHmQuery(query) {
+  if (query.hm !== undefined && query.hm !== '0' && query.hm !== '1') {
+    return { error: 'hm 必须是 0 或 1' }
+  }
+  if (query.hmName !== undefined && query.hmName !== '') {
+    if (Array.isArray(query.hmName) || typeof query.hmName !== 'string') {
+      return { error: 'hmName 必须是游资名称' }
+    }
+    const name = query.hmName.trim()
+    if (name.length > 80) return { error: 'hmName 过长' }
+    return { enabled: query.hm === '1', name }
+  }
+  return { enabled: query.hm === '1', name: '' }
+}
+
 function parseMvYi(value) {
   if (value === '' || value == null) return null
   const n = Number(value)
@@ -258,11 +273,21 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
     const minMvYi = parseMvYi(req.query.minMvYi)
     const maxMvYi = parseMvYi(req.query.maxMvYi)
     const scope = String(req.query.scope || '').trim().toLowerCase()
+    const hmQuery = readHmQuery(req.query)
+    if (hmQuery.error) {
+      res.status(400).json({ error: hmQuery.error })
+      return
+    }
     const hasDailyBasic = hasTable(req.db, 'daily_basic')
     const hasTrendMark = hasTable(req.db, 'trend_mark')
     const useMinMv = hasDailyBasic && minMvYi != null
     const useMaxMv = hasDailyBasic && maxMvYi != null
     const useSignal = scope === 'signal'
+    const useHm = hmQuery.enabled || hmQuery.name !== ''
+    if (useHm && !hasTable(req.db, 'hm_detail')) {
+      res.json({ items: [] })
+      return
+    }
     if (useSignal && !hasTrendMark) {
       res.json({ items: [] })
       return
@@ -292,6 +317,12 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
              AND t.mark_type IN ('correct', 'fail')
          )`
       : ''
+    const hmSql = useHm
+      ? `AND m.ts_code IN (
+           SELECT ts_code FROM hm_detail
+           ${hmQuery.name ? 'WHERE hm_name = ?' : ''}
+         )`
+      : ''
 
     const sql = `SELECT m.ts_code, m.name
        FROM moneyflow_dc m
@@ -299,6 +330,7 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
        WHERE m.trade_date = (SELECT MAX(trade_date) FROM moneyflow_dc)
          ${mvSql}
          ${signalSql}
+         ${hmSql}
          ${searchSql}
        ORDER BY m.ts_code
        ${limitSql}`
@@ -306,6 +338,7 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
     const params = []
     if (useMinMv) params.push(minMvWan)
     if (useMaxMv) params.push(maxMvWan)
+    if (useHm && hmQuery.name) params.push(hmQuery.name)
     if (q) params.push(like, like)
     const items = params.length ? stmt.all(...params) : stmt.all()
     res.json({ items })
@@ -517,36 +550,6 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
     res.json({ tsCode, items })
   })
 
-  router.post('/marks/fail-correct', (req, res) => {
-    const tsCode = String(req.body?.ts_code || '').trim()
-    if (!tsCode) {
-      res.status(400).json({ error: '需要 ts_code' })
-      return
-    }
-
-    const result = req.db
-      .prepare(
-        `UPDATE trend_mark
-         SET mark_type = 'fail',
-             created_at = datetime('now', 'localtime')
-         WHERE ts_code = ? AND mark_type = 'correct'`,
-      )
-      .run(tsCode)
-
-    const items = req.db
-      .prepare(
-        `${MARK_SELECT}
-         WHERE ts_code = ?
-         ORDER BY trade_date, id`,
-      )
-      .all(tsCode)
-    res.json({
-      tsCode,
-      updated: Number(result.changes || 0),
-      items,
-    })
-  })
-
   router.post('/marks', (req, res) => {
     const tsCode = String(req.body?.ts_code || '').trim()
     const tradeDate = String(req.body?.trade_date || '').trim()
@@ -590,6 +593,93 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
     }
     req.db.prepare('DELETE FROM trend_mark WHERE id = ?').run(id)
     res.json({ ok: true, item: existing })
+  })
+
+  router.get('/hm/names', (req, res) => {
+    if (!hasTable(req.db, 'hm_detail')) {
+      res.json({ items: [] })
+      return
+    }
+    const items = hasTable(req.db, 'hm_list')
+      ? req.db
+          .prepare(
+            `SELECT l.name AS name, COUNT(d.hm_name) AS ops
+             FROM hm_list l
+             LEFT JOIN hm_detail d ON d.hm_name = l.name
+             GROUP BY l.name
+             ORDER BY ops DESC, l.name`,
+          )
+          .all()
+      : req.db
+          .prepare(
+            `SELECT hm_name AS name, COUNT(*) AS ops
+             FROM hm_detail
+             WHERE hm_name IS NOT NULL AND hm_name != ''
+             GROUP BY hm_name
+             ORDER BY ops DESC, hm_name`,
+          )
+          .all()
+    res.json({ items })
+  })
+
+  router.get('/hm/detail/:tsCode', (req, res) => {
+    const tsCode = String(req.params.tsCode || '').trim()
+    if (!hasTable(req.db, 'hm_detail')) {
+      res.json({ tsCode, unit: { amount: '元' }, rows: [] })
+      return
+    }
+    const rows = req.db
+      .prepare(
+        `SELECT trade_date, record_no, ts_code, ts_name, hm_name, hm_orgs, tag,
+                buy_amount, sell_amount, net_amount
+         FROM hm_detail
+         WHERE ts_code = ?
+         ORDER BY trade_date, net_amount DESC, record_no`,
+      )
+      .all(tsCode)
+    res.json({
+      tsCode,
+      unit: { amount: '元' },
+      rows,
+    })
+  })
+
+  router.get('/block-trades/:tsCode', (req, res) => {
+    const tsCode = String(req.params.tsCode || '').trim()
+    const empty = {
+      tsCode,
+      unit: { price: '元', vol: '万股', amount: '万元' },
+      rows: [],
+    }
+    if (!hasTable(req.db, 'block_trade')) {
+      res.json(empty)
+      return
+    }
+    const hasDaily = hasTable(req.db, 'daily')
+    const rows = hasDaily
+      ? req.db
+          .prepare(
+            `SELECT b.trade_date, b.record_no, b.ts_code, b.price, b.vol, b.amount,
+                    b.buyer, b.seller, d.close,
+                    CASE WHEN d.close > 0 AND b.price IS NOT NULL
+                      THEN (b.price / d.close - 1) * 100.0
+                      ELSE NULL END AS premium_rate
+             FROM block_trade b
+             LEFT JOIN daily d ON d.ts_code = b.ts_code AND d.trade_date = b.trade_date
+             WHERE b.ts_code = ?
+             ORDER BY b.trade_date, b.record_no`,
+          )
+          .all(tsCode)
+      : req.db
+          .prepare(
+            `SELECT trade_date, record_no, ts_code, price, vol, amount, buyer, seller,
+                    NULL AS close, NULL AS premium_rate
+             FROM block_trade
+             WHERE ts_code = ?
+             ORDER BY trade_date, record_no`,
+          )
+          .all(tsCode)
+    res.json({ ...empty, rows })
   })
 
   router.get('/hsgt', (req, res) => {
