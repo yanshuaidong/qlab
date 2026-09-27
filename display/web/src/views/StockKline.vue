@@ -14,7 +14,11 @@
           <div class="kline-main-meta">
           <div class="pane-heading">
             <span class="pane-title" :class="{ 'is-error': !!error }">
-              <span>{{ error || stockTitle }}</span>
+              <span v-if="error">{{ error }}</span>
+              <span v-else class="board-name">
+                <BoardBadge v-if="!loading" :code="stock?.ts_code || ''" />
+                <span>{{ stockTitle }}</span>
+              </span>
               <span v-if="!error && marketCapText" class="pane-mv">{{ marketCapText }}</span>
               <span v-if="!error && hoverStats" class="kline-legend">
                 <span>{{ hoverStats.date }}</span>
@@ -79,10 +83,22 @@
             popper-class="kline-stock-popper"
             @change="onStockChange"
           >
+            <template #label="{ value, label }">
+              <span class="stock-selected">
+                <span>{{ value }}</span>
+                <span class="board-name">
+                  <BoardBadge :code="String(value || '')" />
+                  <span v-if="nameAfterCode(label, value)">{{ nameAfterCode(label, value) }}</span>
+                </span>
+              </span>
+            </template>
             <template #default="{ item }">
               <div class="stock-option">
                 <span class="code">{{ item.ts_code }}</span>
-                <span>{{ item.name }}</span>
+                <span class="board-name">
+                  <BoardBadge :code="item.ts_code" />
+                  <span>{{ item.name }}</span>
+                </span>
               </div>
             </template>
           </el-select-v2>
@@ -191,6 +207,20 @@
               <el-switch v-model="showBlockMarks" size="small" @change="onShowBlockMarksChange" />
             </header>
             <p class="kline-filter-note">开启后，有大宗交易的K线上显示紫色「宗」。同一天还有「游」时，「宗」叠在「游」上方。此开关不筛选股票。</p>
+          </article>
+          <article class="kline-filter-card" :class="{ 'is-off': !uncapFilterEnabled }">
+            <header class="kline-filter-card__head">
+              <span class="kline-filter-card__name">有摘帽记录的</span>
+              <el-switch v-model="uncapFilterEnabled" size="small" @change="onUncapFilterChange" />
+            </header>
+            <p class="kline-filter-note">开启后，股票列表只保留近一年里撤销 ST 或 *ST、且实施后不再带 ST 的股票。</p>
+          </article>
+          <article class="kline-filter-card">
+            <header class="kline-filter-card__head">
+              <span class="kline-filter-card__name">在K线上标记摘帽</span>
+              <el-switch v-model="showUncapMarks" size="small" @change="onShowUncapMarksChange" />
+            </header>
+            <p class="kline-filter-note">开启后，摘帽当天的K线上显示薄荷绿「摘帽」。当天没有K线时，标在其后 10 天内的第一根K线上。同一天还有其他标记时，「摘帽」叠在最外侧。此开关不筛选股票。</p>
           </article>
         </div>
       </div>
@@ -361,6 +391,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import BoardBadge from '../components/BoardBadge.vue'
 import ChartPane from '../components/ChartPane.vue'
 import {
   debounce,
@@ -392,14 +423,18 @@ const HM_FILTER_KEY = 'qlab.kline.hmFilter'
 const HM_NAME_KEY = 'qlab.kline.hmName'
 const HM_MARK_KEY = 'qlab.kline.hmMarks'
 const BLOCK_MARK_KEY = 'qlab.kline.blockMarks'
+const UNCAP_FILTER_KEY = 'qlab.kline.uncapFilter'
+const UNCAP_MARK_KEY = 'qlab.kline.uncapMarks'
 const DAY_PANEL_KEY = 'qlab.kline.dayPanel'
 const DAY_PANELS = new Set(['mark', 'hm', 'block'])
 const HM_MARK_COLOR = '#7eb6ff'
 const HM_MARK_COLOR_NAMED = '#ff9f1a'
 const BLOCK_MARK_COLOR = '#d7b3ff'
+const UNCAP_MARK_COLOR = '#3ddc97'
 const MARK_STACK_REASON = 0
 const MARK_STACK_HM = 1
 const MARK_STACK_BLOCK = 2
+const MARK_STACK_UNCAP = 3
 const DEFAULT_METRICS = {
   dc: 'net_amount',
   ths: 'net_amount',
@@ -485,6 +520,8 @@ const hmFilterEnabled = ref(readStoredBool(HM_FILTER_KEY, false))
 const hmName = ref(readStoredText(HM_NAME_KEY))
 const showHmMarks = ref(readStoredBool(HM_MARK_KEY, true))
 const showBlockMarks = ref(readStoredBool(BLOCK_MARK_KEY, true))
+const uncapFilterEnabled = ref(readStoredBool(UNCAP_FILTER_KEY, true))
+const showUncapMarks = ref(readStoredBool(UNCAP_MARK_KEY, true))
 const hmNames = ref([])
 const minMvYi = ref(DEFAULT_MIN_MV_YI)
 const maxMvYi = ref(DEFAULT_MAX_MV_YI)
@@ -500,6 +537,7 @@ const thsRows = ref([])
 const l2Rows = ref([])
 const hmRows = ref([])
 const blockRows = ref([])
+const uncapRows = ref([])
 function loadStoredMetrics() {
   const next = { ...DEFAULT_METRICS }
   try {
@@ -550,6 +588,12 @@ const subPanes = [
   { id: 'ths', title: '同花顺', fields: THS_FIELDS },
   { id: 'l2', title: 'L2主动', fields: L2_FIELDS },
 ]
+
+function nameAfterCode(label, code) {
+  const text = String(label || '')
+  const prefix = `${code} `
+  return text.startsWith(prefix) ? text.slice(prefix.length) : ''
+}
 
 function toStockOption(item) {
   return {
@@ -653,6 +697,13 @@ function candleMarkers() {
       if (candleDates.has(row.trade_date)) dates.add(row.trade_date)
     }
     markers.push(...textMarks(dates, 'block', '宗', BLOCK_MARK_COLOR, MARK_STACK_BLOCK))
+  }
+  if (showUncapMarks.value) {
+    const dates = new Set()
+    for (const row of uncapRows.value) {
+      if (candleDates.has(row.trade_date)) dates.add(row.trade_date)
+    }
+    markers.push(...textMarks(dates, 'uncap', '摘帽', UNCAP_MARK_COLOR, MARK_STACK_UNCAP))
   }
   return orderCandleMarkers(markers)
 }
@@ -879,7 +930,7 @@ const chartSeries = computed(() => {
 })
 
 const priceScales = computed(() => {
-  const layers = Number(showHmMarks.value) + Number(showBlockMarks.value)
+  const layers = Number(showHmMarks.value) + Number(showBlockMarks.value) + Number(showUncapMarks.value)
   return {
     right: { scaleMargins: { top: 0.08 + layers * 0.045, bottom: 0.04 } },
   }
@@ -894,7 +945,7 @@ async function loadStock(item) {
   error.value = ''
   const code = encodeURIComponent(item.ts_code)
   try {
-    const [daily, dc, ths, l2, markData, basic, hm, block] = await Promise.all([
+    const [daily, dc, ths, l2, markData, basic, hm, block, uncap] = await Promise.all([
       getJson(`/api/daily/${code}`),
       getJson(`/api/moneyflow/${code}?source=dc`),
       getJson(`/api/moneyflow/${code}?source=ths`),
@@ -903,6 +954,7 @@ async function loadStock(item) {
       getJson(`/api/daily-basic/${code}`).catch(() => ({ item: null })),
       getJson(`/api/hm/detail/${code}`).catch(() => ({ rows: [] })),
       getJson(`/api/block-trades/${code}`).catch(() => ({ rows: [] })),
+      getJson(`/api/st-uncap/${code}`).catch(() => ({ rows: [] })),
     ])
     if (seq !== loadSeq) return
     stock.value = { ...item, total_mv: basic.item?.total_mv ?? null }
@@ -913,6 +965,7 @@ async function loadStock(item) {
     marks.value = markData.items || []
     hmRows.value = hm.rows || []
     blockRows.value = block.rows || []
+    uncapRows.value = uncap.rows || []
     if (!dailyRows.value.length) {
       error.value = '该代码没有日线数据'
     }
@@ -926,6 +979,7 @@ async function loadStock(item) {
     marks.value = []
     hmRows.value = []
     blockRows.value = []
+    uncapRows.value = []
     stock.value = { ...item, total_mv: null }
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -960,6 +1014,7 @@ function emptyStockMessage() {
   if (hmFilterEnabled.value) {
     bits.push(hmName.value ? `游资「${hmName.value}」有操作` : '有游资操作记录')
   }
+  if (uncapFilterEnabled.value) bits.push('有摘帽记录')
   if (!bits.length) return '没有股票'
   return `没有${bits.join('、')}的股票`
 }
@@ -984,6 +1039,7 @@ async function loadStockList(preferredCode) {
     params.set('hm', '1')
     if (hmName.value) params.set('hmName', hmName.value)
   }
+  if (uncapFilterEnabled.value) params.set('uncap', '1')
   const list = await getJson(`/api/stocks?${params}`)
   stockOptions.value = (list.items || []).map(toStockOption)
   if (!stockOptions.value.length) {
@@ -996,6 +1052,7 @@ async function loadStockList(preferredCode) {
     marks.value = []
     hmRows.value = []
     blockRows.value = []
+    uncapRows.value = []
     error.value = emptyStockMessage()
     return
   }
@@ -1098,6 +1155,17 @@ function onShowHmMarksChange(value) {
 
 function onShowBlockMarksChange(value) {
   localStorage.setItem(BLOCK_MARK_KEY, value ? '1' : '0')
+}
+
+function onUncapFilterChange(value) {
+  localStorage.setItem(UNCAP_FILTER_KEY, value ? '1' : '0')
+  loadStockList().catch((err) => {
+    error.value = err.message
+  })
+}
+
+function onShowUncapMarksChange(value) {
+  localStorage.setItem(UNCAP_MARK_KEY, value ? '1' : '0')
 }
 
 function onChartClick(payload) {

@@ -3,6 +3,7 @@ import { createBlockTradeRouter } from './block-trade-routes.js'
 import { createReasonVectorRouter } from './reason-vector-routes.js'
 import { VectorService } from './reason-vector-service.js'
 import { isCalendarDate, readSignalAnalysis, readSignalStocks } from './signal-analysis.js'
+import { listUncap, readUncapQuery, uncapAvailable, uncapCodeSql } from './st-uncap.js'
 import { readLimitAnalysis, readMainForceOutcomes, readMainForceWind } from './limit-analysis.js'
 
 const MONEYFLOW_SOURCES = {
@@ -278,13 +279,23 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
       res.status(400).json({ error: hmQuery.error })
       return
     }
+    const uncapQuery = readUncapQuery(req.query)
+    if (uncapQuery.error) {
+      res.status(400).json({ error: uncapQuery.error })
+      return
+    }
     const hasDailyBasic = hasTable(req.db, 'daily_basic')
     const hasTrendMark = hasTable(req.db, 'trend_mark')
     const useMinMv = hasDailyBasic && minMvYi != null
     const useMaxMv = hasDailyBasic && maxMvYi != null
     const useSignal = scope === 'signal'
     const useHm = hmQuery.enabled || hmQuery.name !== ''
+    const useUncap = uncapQuery.enabled
     if (useHm && !hasTable(req.db, 'hm_detail')) {
+      res.json({ items: [] })
+      return
+    }
+    if (useUncap && !uncapAvailable(req.db)) {
       res.json({ items: [] })
       return
     }
@@ -323,6 +334,9 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
            ${hmQuery.name ? 'WHERE hm_name = ?' : ''}
          )`
       : ''
+    const uncapSql = useUncap
+      ? `AND m.ts_code IN (${uncapCodeSql(hasTable(req.db, 'stock_st'))})`
+      : ''
 
     const sql = `SELECT m.ts_code, m.name
        FROM moneyflow_dc m
@@ -331,6 +345,7 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
          ${mvSql}
          ${signalSql}
          ${hmSql}
+         ${uncapSql}
          ${searchSql}
        ORDER BY m.ts_code
        ${limitSql}`
@@ -642,6 +657,11 @@ export function createApiRouter(getDb, vectors = new VectorService()) {
       unit: { amount: '元' },
       rows,
     })
+  })
+
+  router.get('/st-uncap/:tsCode', (req, res) => {
+    const tsCode = String(req.params.tsCode || '').trim()
+    res.json({ tsCode, rows: listUncap(req.db, tsCode) })
   })
 
   router.get('/block-trades/:tsCode', (req, res) => {

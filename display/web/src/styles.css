@@ -743,11 +743,59 @@ a {
 
 .stock-option {
   display: flex;
+  align-items: center;
   gap: 8px;
+  height: 100%;
 }
 
 .stock-option .code {
   color: var(--accent);
+}
+
+.board-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.board-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.board-badge.is-main {
+  background: #2563eb;
+}
+
+.board-badge.is-star {
+  background: #7c3aed;
+}
+
+.board-badge.is-chinext {
+  background: #d97706;
+}
+
+.board-badge.is-bse {
+  background: #0f766e;
+}
+
+.kline-dock-stock .stock-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: middle;
 }
 
 .sector-body {
